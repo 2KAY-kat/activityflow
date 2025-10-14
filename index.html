@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#2dd4bf">
     <meta name="description" content="Track and schedule your activities with ease">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/favicon.ico">
     <title>Activity Flow</title>
     <link rel="manifest" href="/manifest.json">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"/>
     <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"/>
 </head>
 <body>
     <div class="app-header">
@@ -34,7 +36,6 @@
         </div>
     </div>
 
-    <!-- Login/Signup Modal -->
     <div id="authModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -52,7 +53,7 @@
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">Submit</button>
                 <p style="text-align: center; margin-top: 1rem;">
-                    <a href="#" onclick="toggleAuthMode()">Switch to Signup/Login</a>
+                    <a href="#" onclick="toggleAuthMode()" class="form-a">Switch to Signup/Login</a>
                 </p>
             </form>
         </div>
@@ -231,6 +232,6 @@
         </div>
     </div>
 
-    <script type="module" src="./js/script.js"></script>
+    <script type="module" src="/js/script.js"></script>
 </body>
 </html>
