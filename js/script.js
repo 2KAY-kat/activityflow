@@ -5,12 +5,19 @@ let currentFilter = 'all';
 let deferredPrompt;
 let editingActivityId = null;
 const toast = new Toast();
+let authToken = localStorage.getItem('authToken');
+let isLoginMode = true;
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     initializeTheme();
-    loadActivities();
-    updateDashboard();
+    checkAuth();
+    if (authToken) {
+        loadActivities();
+        updateDashboard();
+    } else {
+        showAuthModal();
+    }
     setMinDate();
     checkNotificationPermission();
     scheduleNotificationCheck();
@@ -39,6 +46,74 @@ function updateThemeIcon(theme) {
     }
 }
 
+// Auth Handling
+function checkAuth() {
+    if (authToken) {
+        document.getElementById('logoutBtn').style.display = 'flex';
+    } else {
+        document.getElementById('logoutBtn').style.display = 'none';
+        showAuthModal();
+    }
+}
+
+function showAuthModal() {
+    document.getElementById('authModal').classList.add('active');
+    document.getElementById('authTitle').textContent = isLoginMode ? 'Login' : 'Signup';
+    document.getElementById('authForm').onsubmit = handleAuth;
+}
+
+function closeAuthModal() {
+    document.getElementById('authModal').classList.remove('active');
+}
+
+function toggleAuthMode() {
+    isLoginMode = !isLoginMode;
+    document.getElementById('authTitle').textContent = isLoginMode ? 'Login' : 'Signup';
+}
+
+async function handleAuth(e) {
+    e.preventDefault();
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
+
+    try {
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            if (isLoginMode) {
+                authToken = data.token;
+                localStorage.setItem('authToken', authToken);
+                toast.show('Logged in successfully!', 'success');
+                closeAuthModal();
+                loadActivities();
+                updateDashboard();
+                checkAuth();
+            } else {
+                toast.show('Signed up successfully! Please login.', 'success');
+                toggleAuthMode();
+            }
+        } else {
+            toast.show(data.error || 'Authentication failed', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error', 'error');
+    }
+}
+
+function logout() {
+    authToken = null;
+    localStorage.removeItem('authToken');
+    document.getElementById('logoutBtn').style.display = 'none';
+    activities = [];
+    toast.show('Logged out', 'success');
+    showAuthModal();
+}
+
 // Service Worker Registration
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js')
@@ -65,18 +140,62 @@ function installApp() {
     }
 }
 
-// Install prompt bar
-window.installApp = installApp;
-
-// Data Management
-function loadActivities() {
-    const stored = localStorage.getItem('activities');
-    activities = stored ? JSON.parse(stored) : [];
+// Data Management (API-based)
+async function loadActivities() {
+    try {
+        const res = await fetch('/api/activities', {
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+        if (res.ok) {
+            activities = await res.json();
+            renderActivities();
+            updateDashboard();
+        } else {
+            toast.show('Failed to load activities', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error', 'error');
+    }
 }
 
-function saveActivities() {
-    localStorage.setItem('activities', JSON.stringify(activities));
-    showSyncStatus();
+async function saveActivity(activity, isUpdate = false) {
+    try {
+        const method = isUpdate ? 'PUT' : 'POST';
+        const url = isUpdate ? `/api/activities/${activity.id}` : '/api/activities';
+        const res = await fetch(url, {
+            method,
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${authToken}`
+            },
+            body: JSON.stringify(activity)
+        });
+        if (res.ok) {
+            const saved = await res.json();
+            scheduleNotification(saved);
+            return saved;
+        } else {
+            toast.show('Failed to save activity', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error', 'error');
+    }
+}
+
+async function deleteActivityFromServer(id) {
+    try {
+        const res = await fetch(`/api/activities/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+        if (res.ok) {
+            return true;
+        } else {
+            toast.show('Failed to delete', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error', 'error');
+    }
 }
 
 function showSyncStatus() {
@@ -86,14 +205,19 @@ function showSyncStatus() {
 }
 
 function syncData() {
-    saveActivities();
-    updateDashboard();
-    renderActivities();
-    showSyncStatus();
+    loadActivities().then(() => {
+        updateDashboard();
+        renderActivities();
+        showSyncStatus();
+    });
 }
 
 // Tab Navigation
 function switchTab(tabName) {
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
 
@@ -121,59 +245,37 @@ function switchTab(tabName) {
 }
 
 // Form Handling
-document.getElementById('activityForm').addEventListener('submit', (e) => {
+document.getElementById('activityForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
 
-    if (editingActivityId) {
-        // Update existing activity
-        const activity = activities.find(a => a.id === editingActivityId);
-        if (activity) {
-            activity.type = document.getElementById('activityType').value;
-            activity.title = document.getElementById('activityTitle').value;
-            activity.clientName = document.getElementById('clientName').value;
-            activity.location = document.getElementById('location').value;
-            activity.date = document.getElementById('activityDate').value;
-            activity.time = document.getElementById('activityTime').value;
-            activity.duration = parseInt(document.getElementById('duration').value);
-            activity.description = document.getElementById('description').value;
-            activity.reminderTime = parseInt(document.getElementById('reminderTime').value);
+    const activity = {
+        id: editingActivityId, // For update
+        type: document.getElementById('activityType').value,
+        title: document.getElementById('activityTitle').value,
+        clientName: document.getElementById('clientName').value,
+        location: document.getElementById('location').value,
+        date: document.getElementById('activityDate').value,
+        time: document.getElementById('activityTime').value,
+        duration: parseInt(document.getElementById('duration').value),
+        description: document.getElementById('description').value,
+        reminderTime: parseInt(document.getElementById('reminderTime').value),
+        completed: false,
+        progress: 0,
+        createdAt: new Date().toISOString()
+    };
 
-            saveActivities();
-            scheduleNotification(activity);
-
-            e.target.reset();
-            toast.show('Activity updated successfully!', 'success');
-            editingActivityId = null;
-            document.getElementById('submitBtn').textContent = 'Add Activity';
-            switchTab('activities');
-            renderActivities();
-        }
-    } else {
-        // Create new activity
-        const activity = {
-            id: Date.now(),
-            type: document.getElementById('activityType').value,
-            title: document.getElementById('activityTitle').value,
-            clientName: document.getElementById('clientName').value,
-            location: document.getElementById('location').value,
-            date: document.getElementById('activityDate').value,
-            time: document.getElementById('activityTime').value,
-            duration: parseInt(document.getElementById('duration').value),
-            description: document.getElementById('description').value,
-            reminderTime: parseInt(document.getElementById('reminderTime').value),
-            completed: false,
-            progress: 0,
-            createdAt: new Date().toISOString()
-        };
-
-        activities.push(activity);
-        saveActivities();
-        scheduleNotification(activity);
-
+    const saved = await saveActivity(activity, !!editingActivityId);
+    if (saved) {
         e.target.reset();
-        toast.show('Activity created successfully!', 'success');
+        toast.show(editingActivityId ? 'Activity updated!' : 'Activity created!', 'success');
+        editingActivityId = null;
+        document.getElementById('submitBtn').textContent = 'Create Activity';
         switchTab('activities');
-        renderActivities();
+        loadActivities();
     }
 });
 
@@ -184,6 +286,10 @@ function setMinDate() {
 
 // Render Activities
 function renderActivities() {
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
     const container = document.getElementById('activitiesList');
     let filtered = activities;
 
@@ -217,26 +323,26 @@ function renderActivities() {
         const badgeClass = `badge-${activity.type}`;
         const datetime = new Date(activity.date + ' ' + activity.time);
         return `
-            <div class="activity-item ${activity.completed ? 'completed' : ''}" onclick="viewActivity(${activity.id})">
+            <div class="activity-item ${activity.completed ? 'completed' : ''}" onclick="viewActivity('${activity._id}')">
                 <div class="activity-header">
                     <div class="activity-title">${activity.title}</div>
                     <span class="activity-badge ${badgeClass}">${activity.type.charAt(0).toUpperCase() + activity.type.slice(1)}</span>
                 </div>
                 <div class="activity-meta">
-                    <span><i class="fa fa-user"></i> ${activity.clientName}</span>
-                    <span><i class="fa fa-calendar"></i> ${formatDate(activity.date)}</span>
-                    <span><i class="fa fa-clock"></i> ${activity.time}</span>
-                    ${activity.location ? `<span><i class="fa fa-map-marker"></i> ${activity.location}</span>` : ''}
+                    <span><i class="fa fa-user"></i>${activity.clientName}</span>
+                    <span><i class="fa fa-calendar"></i>${formatDate(activity.date)}</span>
+                    <span><i class="fa fa-clock"></i>${activity.time}</span>
+                    ${activity.location ? `<span><i class="fa fa-map-marker"></i>${activity.location}</span>` : ''}
                 </div>
                 <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill${activity.id}" style="width: ${activity.progress}%"></div>
+                    <div class="progress-fill" id="progressFill${activity._id}" style="width: ${activity.progress}%"></div>
                 </div>
                 <div class="activity-actions">
-                    <button class="action-btn btn-success" onclick="toggleComplete(${activity.id}, ${!activity.completed})">
+                    <button class="action-btn btn-success" onclick="toggleComplete('${activity._id}', ${!activity.completed})">
                         ${activity.completed ? 'Undo' : 'Complete'}
                     </button>
-                    <button class="action-btn" onclick="editActivity(${activity.id})">Edit</button>
-                    <button class="action-btn btn-danger" onclick="deleteActivity(${activity.id})">Delete</button>
+                    <button class="action-btn" onclick="editActivity('${activity._id}')">Edit</button>
+                    <button class="action-btn btn-danger" onclick="deleteActivity('${activity._id}')">Delete</button>
                 </div>
             </div>
         `;
@@ -245,6 +351,10 @@ function renderActivities() {
 
 // Dashboard Updates
 function updateDashboard() {
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const endOfWeek = new Date(today);
@@ -267,7 +377,7 @@ function updateDashboard() {
     document.getElementById('todayActivities').textContent = todayActivities.length;
 
     document.getElementById('todayList').innerHTML = todayActivities.length ? todayActivities.map(activity => `
-        <div class="activity-item ${activity.completed ? 'completed' : ''}" onclick="viewActivity(${activity.id})">
+        <div class="activity-item ${activity.completed ? 'completed' : ''}" onclick="viewActivity('${activity._id}')">
             <div class="activity-header">
                 <div class="activity-title">${activity.title}</div>
                 <span class="activity-badge badge-${activity.type}">${activity.type.charAt(0).toUpperCase() + activity.type.slice(1)}</span>
@@ -285,7 +395,7 @@ function updateDashboard() {
     `;
 
     document.getElementById('upcomingList').innerHTML = upcomingActivities.length ? upcomingActivities.map(activity => `
-        <div class="activity-item ${activity.completed ? 'completed' : ''}" onclick="viewActivity(${activity.id})">
+        <div class="activity-item ${activity.completed ? 'completed' : ''}" onclick="viewActivity('${activity._id}')">
             <div class="activity-header">
                 <div class="activity-title">${activity.title}</div>
                 <span class="activity-badge badge-${activity.type}">${activity.type.charAt(0).toUpperCase() + activity.type.slice(1)}</span>
@@ -306,6 +416,10 @@ function updateDashboard() {
 
 // Progress Updates
 function updateProgress() {
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
     const total = activities.length;
     const completed = activities.filter(a => a.completed).length;
     const completionRate = total ? Math.round((completed / total) * 100) : 0;
@@ -346,7 +460,7 @@ function updateProgress() {
 
     const recentCompletions = activities.filter(a => a.completed).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
     document.getElementById('recentCompletions').innerHTML = recentCompletions.length ? recentCompletions.map(activity => `
-        <div class="activity-item completed" onclick="viewActivity(${activity.id})">
+        <div class="activity-item completed" onclick="viewActivity('${activity._id}')">
             <div class="activity-header">
                 <div class="activity-title">${activity.title}</div>
                 <span class="activity-badge badge-${activity.type}">${activity.type.charAt(0).toUpperCase() + activity.type.slice(1)}</span>
@@ -365,7 +479,11 @@ function updateProgress() {
 }
 
 function viewActivity(id) {
-    const activity = activities.find(a => a.id === id);
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
+    const activity = activities.find(a => a._id === id);
     if (!activity) return;
 
     document.getElementById('modalBody').innerHTML = `
@@ -385,20 +503,24 @@ function viewActivity(id) {
         </div>
         <div class="activity-actions" style="margin-top: 1.5rem;">
             <label style="display: flex; align-items: center; gap: 0.5rem;">
-                <input type="checkbox" class="checkbox-input" ${activity.completed ? 'checked' : ''} onchange="toggleComplete(${activity.id}, this.checked)">
+                <input type="checkbox" class="checkbox-input" ${activity.completed ? 'checked' : ''} onchange="toggleComplete('${activity._id}', this.checked)">
                 Mark as ${activity.completed ? 'Incomplete' : 'Complete'}
             </label>
-            <button class="action-btn" onclick="editActivity(${activity.id})">Edit</button>
-            <button class="action-btn btn-danger" onclick="deleteActivity(${activity.id})">Delete</button>
+            <button class="action-btn" onclick="editActivity('${activity._id}')">Edit</button>
+            <button class="action-btn btn-danger" onclick="deleteActivity('${activity._id}')">Delete</button>
         </div>
         <div style="margin-top: 1rem;">
-            <label>Progress: <input type="range" min="0" max="100" value="${activity.progress}" oninput="updateActivityProgress(${activity.id}, this.value)"></label>
+            <label>Progress: <input type="range" min="0" max="100" value="${activity.progress}" oninput="updateActivityProgress('${activity._id}', this.value)"></label>
         </div>
     `;
     document.getElementById('activityModal').classList.add('active');
 }
 
 function filterActivities(filter) {
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
     currentFilter = filter;
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelector(`.filter-btn[data-filter="${filter}"]`).classList.add('active');
@@ -409,21 +531,13 @@ function closeModal() {
     document.getElementById('activityModal').classList.remove('active');
 }
 
-function toggleComplete(id, completed) {
-    const activity = activities.find(a => a.id === id);
-    if (activity) {
-        activity.completed = completed;
-        if (completed) activity.progress = 100;
-        saveActivities();
-        viewActivity(id); // Refresh modal content instead of closing
-        updateDashboard();
-        renderActivities();
-    }
-}
-
 let activityToDelete = null;
 
 function showDeleteModal(id) {
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
     activityToDelete = id;
     document.getElementById('deleteModal').classList.add('active');
 }
@@ -433,15 +547,21 @@ function closeDeleteModal() {
     activityToDelete = null;
 }
 
-function confirmDelete() {
+async function confirmDelete() {
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
     if (activityToDelete) {
-        activities = activities.filter(a => a.id !== activityToDelete);
-        saveActivities();
-        closeDeleteModal();
-        closeModal();
-        updateDashboard();
-        renderActivities();
-        toast.show('Activity deleted successfully!', 'success');
+        const success = await deleteActivityFromServer(activityToDelete);
+        if (success) {
+            activities = activities.filter(a => a._id !== activityToDelete);
+            closeDeleteModal();
+            closeModal();
+            updateDashboard();
+            renderActivities();
+            toast.show('Activity deleted!', 'success');
+        }
     }
 }
 
@@ -449,8 +569,30 @@ function deleteActivity(id) {
     showDeleteModal(id);
 }
 
+async function toggleComplete(id, completed) {
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
+    const activity = activities.find(a => a._id === id);
+    if (activity) {
+        activity.completed = completed;
+        if (completed) activity.progress = 100;
+        const saved = await saveActivity(activity, true);
+        if (saved) {
+            viewActivity(id);
+            updateDashboard();
+            loadActivities();
+        }
+    }
+}
+
 function editActivity(id) {
-    const activity = activities.find(a => a.id === id);
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
+    const activity = activities.find(a => a._id === id);
     if (!activity) return;
 
     editingActivityId = id;
@@ -471,6 +613,10 @@ function editActivity(id) {
 }
 
 function quickAddActivity() {
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
     switchTab('add');
 }
 
@@ -506,8 +652,8 @@ function scheduleNotification(activity) {
         setTimeout(() => {
             new Notification('Upcoming Activity', {
                 body: `${activity.title} with ${activity.clientName} in ${activity.reminderTime} minutes`,
-                icon: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%236366f1" width="100" height="100" rx="15"/%3E%3C/svg%3E',
-                tag: activity.id.toString(),
+                icon: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%232dd4bf" width="100" height="100" rx="15"/%3E%3C/svg%3E',
+                tag: activity._id.toString(),
                 requireInteraction: true
             });
         }, delay);
@@ -548,9 +694,33 @@ function formatDate(dateStr) {
     return date.toLocaleDateString('en-US', options);
 }
 
-// Close modal when clicking outside
+async function updateActivityProgress(id, value) {
+    if (!authToken) {
+        showAuthModal();
+        return;
+    }
+    const progressFill = document.getElementById(`progressFill${id}`);
+    if (progressFill) {
+        progressFill.style.width = value + '%';
+    }
+    const activity = activities.find(a => a._id === id);
+    if (activity) {
+        activity.progress = parseInt(value);
+        await saveActivity(activity, true);
+    }
+}
+
+// Close modals when clicking outside
 document.getElementById('activityModal').addEventListener('click', (e) => {
     if (e.target.id === 'activityModal') closeModal();
+});
+
+document.getElementById('deleteModal').addEventListener('click', (e) => {
+    if (e.target.id === 'deleteModal') closeDeleteModal();
+});
+
+document.getElementById('authModal').addEventListener('click', (e) => {
+    if (e.target.id === 'authModal') closeAuthModal();
 });
 
 // Handle app shortcuts
@@ -573,20 +743,7 @@ function handleShortcuts() {
     }
 }
 
-// Activity Progress Update
-function updateActivityProgress(id, value) {
-    const progressFill = document.getElementById(`progressFill${id}`);
-    if (progressFill) {
-        progressFill.style.width = value + '%';
-    }
-    const activity = activities.find(a => a.id === id);
-    if (activity) {
-        activity.progress = parseInt(value);
-        saveActivities();
-    }
-}
-
-// Make functions globally available for onclick attributes
+// Make functions globally available
 window.requestNotificationPermission = requestNotificationPermission;
 window.syncData = syncData;
 window.switchTab = switchTab;
@@ -601,3 +758,7 @@ window.deleteActivity = deleteActivity;
 window.toggleComplete = toggleComplete;
 window.updateActivityProgress = updateActivityProgress;
 window.toggleTheme = toggleTheme;
+window.installApp = installApp;
+window.logout = logout;
+window.closeAuthModal = closeAuthModal;
+window.toggleAuthMode = toggleAuthMode;

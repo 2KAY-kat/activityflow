@@ -31,6 +31,30 @@
         </div>
     </div>
 
+    <!-- Login/Signup Modal -->
+    <div id="authModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="authTitle">Login</h2>
+                <button class="close-btn" onclick="closeAuthModal()">×</button>
+            </div>
+            <form id="authForm">
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-input" id="email" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-input" id="password" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Submit</button>
+                <p style="text-align: center; margin-top: 1rem;">
+                    <a href="#" class="form-a" onclick="toggleAuthMode()">Switch to Signup/Login</a>
+                </p>
+            </form>
+        </div>
+    </div>
+
     <div class="container">
         <div id="installPrompt" class="install-prompt">
             <span>Install app for better experience</span>

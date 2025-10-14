@@ -23,7 +23,7 @@
     --text-secondary: #64748b; /* Muted slate */
     --border: #d4d4d8; /* Light zinc */
 }
-
+/** //lBONtSryt1BFrN4d **/
 /* Dark Theme */
 [data-theme="dark"] {
     --primary: #4b4646; /* Deep emerald */
@@ -76,6 +76,16 @@ body {
 .header-actions {
     display: flex;
     gap: 0.5rem;
+}
+
+.form-a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.form-a:hover {
+    color: var(--primary-dark);
+    text-decoration: none;
 }
 
 .icon-btn {
@@ -422,6 +432,7 @@ body {
     max-height: 90vh;
     overflow-y: auto;
     animation: slideUp 0.3s;
+    border: 2px solid var(--border);
 }
 
 @keyframes slideUp {
@@ -460,6 +471,17 @@ body {
 .close-btn:hover {
     background: var(--border);
     color: var(--text);
+}
+
+.auth-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.auth-link:hover {
+    text-decoration: underline;
+    color: var(--primary-dark);
 }
 
 .notification-badge {
