@@ -25,7 +25,7 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'N$1kQ2025_DB';
 
 app.post('/register', async (req, res) => {
     console.log('Received /api/auth/register request:', req.body);

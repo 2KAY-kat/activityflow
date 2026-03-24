@@ -1,56 +1,48 @@
 export class Toast {
     constructor() {
         this.container = document.getElementById('toast-container');
-        this.duration = 5000; 
+        this.duration = 4000;
     }
 
     show(message, type) {
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
         
-        // we set the displayed icon according to toast type and the time of sending well formatted
-        const icon = this.getIcon(type);
         const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         
-        // toast html markup layout 
+        const iconClass = type === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation';
+
         toast.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: space-between; position: relative;">
-                <div style="display: flex; align-items: center; flex: 1;">
-                    ${icon ? `<span class="toast-icon">${icon}</span>` : ''}
-                    <span class="message">${message}</span>
-                </div>
+            <div class="toast-icon">
+                <i class="${iconClass}"></i>
             </div>
-            <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">
-                ${timestamp}
+            <div class="toast-content">
+                <div class="toast-title">${message}</div>
+                <div class="toast-time">${timestamp}</div>
             </div>
         `;
         
         this.container.appendChild(toast);
         
-        // toast animation timing thing
-        setTimeout(() => toast.classList.add('show'), 10);
+        // requestAnimationFrame for smoother entry
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                toast.classList.add('show');
+            });
+        });
         
-        const autoRemove = setTimeout(() => {
+        setTimeout(() => {
             this.hide(toast);
-            clearTimeout(autoRemove);
         }, this.duration);
     }
     
     hide(toast) {
+        toast.classList.remove('show');
         toast.classList.add('hide');
         setTimeout(() => {
             if (toast.parentNode) {
                 toast.parentNode.removeChild(toast);
             }
-        }, 300);
-    }
-    
-    // the corresponidng icons on the toast messages for either success, failure ....
-    getIcon(type) {
-        const icons = {
-            success: '✓',
-            error: '✕'
-        };
-        return icons[type];
+        }, 400); // Wait for transition
     }
 }
