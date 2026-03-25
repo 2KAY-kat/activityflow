@@ -1016,6 +1016,17 @@ textarea {
     text-transform: uppercase;
 }
 
+.team-title-badge {
+    font-size: 0.5em;
+    font-weight: 500;
+    color: var(--primary-color);
+    background: var(--bg-hover);
+    padding: 2px 8px;
+    border-radius: 12px;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
 .invite-code-pill {
     font-family: monospace;
     background: var(--bg-hover);

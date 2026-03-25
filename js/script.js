@@ -7,6 +7,17 @@ let draggedTicketId = null;
 const toast = new Toast();
 let authToken = localStorage.getItem('authToken');
 let isLoginMode = true;
+let currentTeamId = localStorage.getItem('currentTeamId');
+let myTeams = [];
+let teamMembers = [];
+
+// Expose functions to window
+window.openTeamsModal = openTeamsModal;
+window.closeModal = closeModal;
+window.switchTeamTab = switchTeamTab;
+window.createTeam = createTeam;
+window.joinTeam = joinTeam;
+window.selectTeam = selectTeam;
 
 // Expose functions to window for inline HTML onclick/ondrop handlers
 window.toggleTheme = toggleTheme;
@@ -29,6 +40,11 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeTheme();
     checkAuth();
     checkSystemHealth();
+    
+    // Auto-select team from storage if possible
+    if (authToken && currentTeamId) {
+        selectTeam(currentTeamId);
+    }
     
     // Poll system health every 30 seconds
     setInterval(checkSystemHealth, 30000);
@@ -101,7 +117,11 @@ function checkAuth() {
         if (logoutBtn) logoutBtn.style.display = 'flex';
         if (headerNewTicket) headerNewTicket.style.display = 'flex';
         if (headerLogin) headerLogin.style.display = 'none';
-        loadTickets();
+        if (currentTeamId) {
+            loadTickets();
+        } else {
+            loadTeams();
+        }
     } else {
         if (landingPage) landingPage.style.display = 'flex';
         if (dashboard) dashboard.style.display = 'none';
@@ -152,7 +172,7 @@ async function handleAuth(e) {
                 localStorage.setItem('authToken', authToken);
                 toast.show('Logged in successfully', 'success');
                 checkAuth();
-                loadTickets();
+                loadTeams();
             } else {
                 toast.show('Account created. Please login.', 'success');
                 toggleAuthMode();
@@ -179,7 +199,8 @@ async function loadTickets() {
     renderSkeletons();
     
     try {
-        const res = await fetch('/api/tickets', {
+        const url = currentTeamId ? `/api/tickets?teamId=${currentTeamId}` : '/api/tickets';
+        const res = await fetch(url, {
             headers: { Authorization: `Bearer ${authToken}` }
         });
         if (res.ok) {
@@ -240,7 +261,8 @@ function renderBoard() {
         card.ondragstart = (e) => dragStart(e, ticket.id);
         
         const priorityLower = ticket.priority.toLowerCase();
-        const initials = ticket.assignee ? ticket.assignee.substring(0,2).toUpperCase() : '??';
+        const assigneeInfo = ticket.assignee ? ticket.assignee.email : 'Unassigned';
+        const initials = ticket.assignee ? ticket.assignee.email.substring(0,2).toUpperCase() : '??';
 
         card.innerHTML = `
             <div class="ticket-header">
@@ -253,7 +275,7 @@ function renderBoard() {
             ${ticket.description ? `<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${ticket.description}</div>` : ''}
             <div class="ticket-footer">
                 <span class="badge priority-${priorityLower}">${ticket.priority}</span>
-                <div class="assignee-avatar" title="${ticket.assignee || 'Unassigned'}">${initials}</div>
+                <div class="assignee-avatar" title="${assigneeInfo}">${initials}</div>
             </div>
         `;
         col.appendChild(card);
@@ -285,8 +307,9 @@ async function saveTicket(e) {
         title: document.getElementById('ticketTitle').value,
         description: document.getElementById('ticketDescription').value,
         priority: document.getElementById('ticketPriority').value,
-        assignee: document.getElementById('ticketAssignee').value,
-        status: document.getElementById('ticketStatus').value
+        assigneeId: document.getElementById('ticketAssignee').value ? parseInt(document.getElementById('ticketAssignee').value) : null,
+        status: document.getElementById('ticketStatus').value,
+        teamId: currentTeamId ? parseInt(currentTeamId) : null
     };
 
     const isUpdate = !!editingTicketId;
@@ -338,7 +361,7 @@ function editTicket(id) {
     document.getElementById('ticketTitle').value = ticket.title;
     document.getElementById('ticketDescription').value = ticket.description || '';
     document.getElementById('ticketPriority').value = ticket.priority;
-    document.getElementById('ticketAssignee').value = ticket.assignee || '';
+    document.getElementById('ticketAssignee').value = ticket.assigneeId || '';
     document.getElementById('ticketStatus').value = ticket.status;
 
     document.getElementById('ticketModal').classList.add('active');
@@ -426,4 +449,195 @@ async function drop(e) {
         }
     }
     draggedTicketId = null;
+}
+
+// Team Management Functions
+async function openTeamsModal() {
+    document.getElementById('teamsModal').classList.add('active');
+    await loadTeams();
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).classList.remove('active');
+}
+
+function switchTeamTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    
+    if (tab === 'myTeams') {
+        document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+        document.getElementById('myTeamsTab').classList.add('active');
+    } else {
+        document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+        document.getElementById('joinCreateTab').classList.add('active');
+    }
+}
+
+async function loadTeams() {
+    if (!authToken) return;
+    try {
+        const res = await fetch('/api/teams', {
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+        if (res.ok) {
+            myTeams = await res.json();
+            renderTeamsList();
+            
+            // If no team selected but teams exist, select the first one
+            if (!currentTeamId && myTeams.length > 0) {
+                selectTeam(myTeams[0].id);
+            }
+        }
+    } catch (error) {
+        toast.show('Failed to load teams', 'error');
+    }
+}
+
+function renderTeamsList() {
+    const list = document.getElementById('teamsList');
+    if (!list) return;
+    
+    if (myTeams.length === 0) {
+        list.innerHTML = '<p class="text-muted">You are not in any teams yet.</p>';
+        return;
+    }
+
+    list.innerHTML = myTeams.map(team => `
+        <div class="team-item ${currentTeamId == team.id ? 'active' : ''}" onclick="selectTeam(${team.id})">
+            <div>
+                <strong>${team.name}</strong>
+                <div style="font-size: 0.8em; color: var(--text-secondary)">
+                    ${team._count.members} members • ${team._count.tickets} tickets
+                </div>
+            </div>
+            <span class="invite-code-pill">${team.inviteCode}</span>
+        </div>
+    `).join('');
+}
+
+async function createTeam() {
+    const nameInput = document.getElementById('newTeamName');
+    const name = nameInput.value.trim();
+    if (!name) return toast.show('Team name is required', 'error');
+
+    try {
+        const res = await fetch('/api/teams', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ name })
+        });
+        
+        if (res.ok) {
+            toast.show('Team created!', 'success');
+            nameInput.value = '';
+            await loadTeams();
+            switchTeamTab('myTeams');
+        } else {
+            const data = await res.json();
+            toast.show(data.error || 'Failed to create team', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error', 'error');
+    }
+}
+
+async function joinTeam() {
+    const codeInput = document.getElementById('inviteCodeInput');
+    const inviteCode = codeInput.value.trim().toUpperCase();
+    if (!inviteCode) return toast.show('Invite code is required', 'error');
+
+    try {
+        const res = await fetch('/api/teams/join', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ inviteCode })
+        });
+        
+        if (res.ok) {
+            toast.show('Joined team!', 'success');
+            codeInput.value = '';
+            await loadTeams();
+            switchTeamTab('myTeams');
+        } else {
+            const data = await res.json();
+            toast.show(data.error || 'Invalid invite code', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error', 'error');
+    }
+}
+
+async function selectTeam(teamId) {
+    currentTeamId = teamId;
+    localStorage.setItem('currentTeamId', teamId);
+    
+    // Update Active Team Info UI
+    const team = myTeams.find(t => t.id == teamId);
+    if (team) {
+        const info = document.getElementById('activeTeamInfo');
+        if (info) {
+            info.innerHTML = `
+                <strong>${team.name}</strong>
+                <div style="font-size: 0.8em; margin-top: 5px;">Invite Code: <span class="invite-code-pill">${team.inviteCode}</span></div>
+            `;
+        }
+        const display = document.getElementById('currentTeamDisplay');
+        if (display) {
+            display.textContent = team.name;
+        }
+    }
+
+    renderTeamsList();
+    loadTeamMembers(teamId);
+    loadTickets();
+}
+
+async function loadTeamMembers(teamId) {
+    try {
+        const res = await fetch(`/api/teams/${teamId}/members`, {
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+        if (res.ok) {
+            teamMembers = await res.json();
+            renderMembersList();
+            updateAssigneeDropdown();
+        }
+    } catch (error) {
+        console.error('Failed to load members:', error);
+    }
+}
+
+function renderMembersList() {
+    const list = document.getElementById('teamMembersList');
+    const section = document.getElementById('teamMembersSection');
+    if (!list) return;
+    
+    section.style.display = 'block';
+    list.innerHTML = teamMembers.map(m => `
+        <li class="member-item">
+            <div class="assignee-avatar">${m.email.substring(0,2).toUpperCase()}</div>
+            <div style="flex-grow: 1;">
+                <div>${m.email}</div>
+                <span class="member-role">${m.role}</span>
+            </div>
+        </li>
+    `).join('');
+}
+
+function updateAssigneeDropdown() {
+    const select = document.getElementById('ticketAssignee');
+    if (!select) return;
+    
+    const currentValue = select.value;
+    select.innerHTML = '<option value="">Unassigned</option>' + 
+        teamMembers.map(m => `<option value="${m.id}">${m.email}</option>`).join('');
+    
+    select.value = currentValue;
 }
