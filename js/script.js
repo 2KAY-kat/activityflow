@@ -36,28 +36,34 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('authForm').addEventListener('submit', handleAuth);
     document.getElementById('ticketForm').addEventListener('submit', saveTicket);
 
-    if (authToken) {
-        loadTickets();
-    }
+    // loadTickets is now called within checkAuth
 });
 
 async function checkSystemHealth() {
-    const statusEl = document.getElementById('systemStatus');
-    const statusText = statusEl.querySelector('.status-text');
+    const headerStatus = document.getElementById('systemStatus');
+    const footerStatus = document.getElementById('footerHealth');
     
+    const updateUI = (isOnline) => {
+        [headerStatus, footerStatus].forEach(el => {
+            if (!el) return;
+            const text = el.querySelector('.status-text');
+            if (isOnline) {
+                el.className = 'status-indicator online';
+                text.textContent = 'System OK';
+                el.title = 'System Status: Connected to Database';
+            } else {
+                el.className = 'status-indicator offline';
+                text.textContent = 'System Offline';
+                el.title = 'System Status: Database Connection Error';
+            }
+        });
+    };
+
     try {
         const res = await fetch('/api/health');
-        if (res.ok) {
-            statusEl.className = 'status-indicator online';
-            statusText.textContent = 'System OK';
-            statusEl.title = 'System Status: Connected to Database';
-        } else {
-            throw new Error('Health check failed');
-        }
+        updateUI(res.ok);
     } catch (error) {
-        statusEl.className = 'status-indicator offline';
-        statusText.textContent = 'System Offline';
-        statusEl.title = 'System Status: Database Connection Error';
+        updateUI(false);
     }
 }
 
@@ -84,13 +90,20 @@ function updateThemeIcon(theme) {
 
 function checkAuth() {
     const authModal = document.getElementById('authModal');
+    const landingPage = document.getElementById('landingPage');
+    const dashboard = document.getElementById('dashboard');
     const logoutBtn = document.getElementById('logoutBtn');
     
     if (authToken) {
         authModal.classList.remove('active');
+        if (landingPage) landingPage.style.display = 'none';
+        if (dashboard) dashboard.style.display = 'flex';
         logoutBtn.style.display = 'flex';
+        loadTickets();
     } else {
         authModal.classList.add('active');
+        if (landingPage) landingPage.style.display = 'flex';
+        if (dashboard) dashboard.style.display = 'none';
         logoutBtn.style.display = 'none';
         tickets = [];
         renderBoard();
@@ -155,6 +168,9 @@ function logout() {
 }
 
 async function loadTickets() {
+    if (!authToken) return;
+    renderSkeletons();
+    
     try {
         const res = await fetch('/api/tickets', {
             headers: { Authorization: `Bearer ${authToken}` }
@@ -169,6 +185,25 @@ async function loadTickets() {
     } catch (error) {
         toast.show('Error loading tickets', 'error');
     }
+}
+
+function renderSkeletons() {
+    const cols = ['col-todo', 'col-inprogress', 'col-done'];
+    cols.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = Array(3).fill(0).map(() => `
+            <div class="skeleton-card">
+                <div class="skeleton-box skeleton-title"></div>
+                <div class="skeleton-box skeleton-text"></div>
+                <div class="skeleton-box skeleton-text-short"></div>
+                <div class="skeleton-footer">
+                    <div class="skeleton-box skeleton-badge"></div>
+                    <div class="skeleton-box skeleton-avatar"></div>
+                </div>
+            </div>
+        `).join('');
+    });
 }
 
 function syncData() {

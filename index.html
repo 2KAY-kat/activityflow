@@ -33,8 +33,41 @@
         </div>
     </header>
 
-    <!-- Main Board Area -->
-    <main class="board-container">
+    <!-- Landing Page Section -->
+    <section id="landingPage" class="landing-section">
+        <div class="landing-container">
+            <div class="hero">
+                <span class="hero-badge">Production Ready</span>
+                <h1 class="hero-title">Agile Workflow, <span class="text-gradient">Simplified.</span></h1>
+                <p class="hero-subtitle">ActivityFlow is a high-performance Kanban board for modern development teams. Organize, track, and ship code faster with real-time sync and type-safe reliability.</p>
+                <div class="hero-actions">
+                    <button class="btn btn-primary btn-lg" onclick="document.getElementById('authModal').classList.add('active')">Get Started Free</button>
+                    <a href="#features" class="btn btn-ghost btn-lg">Learn More</a>
+                </div>
+            </div>
+            
+            <div class="features-grid" id="features">
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fa-solid fa-bolt"></i></div>
+                    <h3>Real-time Sync</h3>
+                    <p>Instant updates across your team with our optimized Neon PostgreSQL backend.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fa-solid fa-shield-halved"></i></div>
+                    <h3>Secure by Default</h3>
+                    <p>Enterprise-grade security with JWT auth, Rate Limiting, and Zod validation.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fa-solid fa-heart-pulse"></i></div>
+                    <h3>Health Monitoring</h3>
+                    <p>Built-in system pulse check ensures your database is always connected.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Board Area (Dashboard) -->
+    <main class="board-container" id="dashboard" style="display: none;">
         <!-- To Do Column -->
         <section class="column" data-status="To Do">
             <div class="column-header">
@@ -65,6 +98,23 @@
             </div>
         </section>
     </main>
+
+    <footer class="app-footer">
+        <div class="footer-container">
+            <div class="footer-info">
+                <p>&copy; 2026 ActivityFlow Systems. All rights reserved.</p>
+            </div>
+            <div class="footer-status">
+                <div id="footerHealth" class="status-indicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">System Checking...</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Ticket Modal -->
+    <!-- ... (rest of modals) ... -->
 
     <!-- Ticket Modal -->
     <div id="ticketModal" class="modal-overlay">
