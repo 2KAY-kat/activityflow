@@ -140,17 +140,13 @@
                         </select>
                     </div>
                     <div class="form-group half">
-                        <label for="ticketAssignee">Assignee</label>
-                        <input type="text" id="ticketAssignee" placeholder="e.g. John Doe" autocomplete="off">
+                        <label for="ticketStatus">Status</label>
+                        <select id="ticketStatus">
+                            <option value="To Do" selected>To Do</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Done">Done</option>
+                        </select>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label for="ticketStatus">Status</label>
-                    <select id="ticketStatus">
-                        <option value="To Do" selected>To Do</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Done">Done</option>
-                    </select>
                 </div>
                 <div class="form-group">
                     <label for="ticketAssignee">Assignee</label>
@@ -163,6 +159,59 @@
                     <button type="submit" class="btn btn-primary" id="saveTicketBtn">Save Ticket</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Teams Modal -->
+    <div id="teamsModal" class="modal-overlay">
+        <div class="modal teams-modal">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-users"></i> Team Management</h3>
+                <button class="icon-btn close-modal" onclick="closeModal('teamsModal')"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="teams-container">
+                <div class="teams-section">
+                    <h4>Current Team</h4>
+                    <div id="activeTeamInfo" class="active-team-card">
+                        <p>No team selected</p>
+                    </div>
+                </div>
+                
+                <div class="teams-tabs">
+                    <button class="tab-btn active" onclick="switchTeamTab('myTeams')">My Teams</button>
+                    <button class="tab-btn" onclick="switchTeamTab('joinCreate')">Join / Create</button>
+                </div>
+
+                <div id="myTeamsTab" class="tab-content active">
+                    <div id="teamsList" class="teams-list">
+                        <!-- Teams will be loaded here -->
+                    </div>
+                    <div id="teamMembersSection" style="display: none; margin-top: 20px;">
+                        <h4>Team Members</h4>
+                        <ul id="teamMembersList" class="members-list">
+                            <!-- Members will be loaded here -->
+                        </ul>
+                    </div>
+                </div>
+
+                <div id="joinCreateTab" class="tab-content">
+                    <div class="team-form">
+                        <h5>Create New Team</h5>
+                        <div class="form-group">
+                            <input type="text" id="newTeamName" placeholder="Team Name" class="form-control">
+                            <button class="btn btn-primary btn-block" onclick="createTeam()" style="margin-top: 10px;">Create Team</button>
+                        </div>
+                    </div>
+                    <hr style="margin: 20px 0; border-color: var(--border-color);">
+                    <div class="team-form">
+                        <h5>Join a Team</h5>
+                        <div class="form-group">
+                            <input type="text" id="inviteCodeInput" placeholder="Invite Code (e.g. ABCD1234)" class="form-control">
+                            <button class="btn btn-primary btn-block" onclick="joinTeam()" style="margin-top: 10px;">Join Team</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
