@@ -13,9 +13,9 @@ mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true
 }).then(() => {
-    console.log('MongoDB connected successfully');
+    console.log('MongoDB connected successfully (auth api)');
 }).catch(err => {
-    console.error('MongoDB connection error:', err);
+    console.error('MongoDB connection error (auth api):', err);
 });
 
 const userSchema = new mongoose.Schema({
@@ -45,7 +45,7 @@ app.post('/register', async (req, res) => {
         res.status(201).json({ message: 'User created' });
     } catch (error) {
         console.error('Register error:', error);
-        res.status(500).json({ error: 'Server error' });
+        res.status(500).json({ error: 'Server error', details: error.message });
     }
 });
 
