@@ -1,27 +1,11 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const prisma = require('./prisma');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
-
-const connectDB = require('./db');
-
-connectDB().catch(console.error);
-
-const ticketSchema = new mongoose.Schema({
-  title: { type: String, required: true },
-  description: String,
-  status: { type: String, enum: ['To Do', 'In Progress', 'Done'], default: 'To Do' },
-  priority: { type: String, enum: ['Low', 'Medium', 'High'], default: 'Medium' },
-  assignee: String,
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const Ticket = mongoose.model('Ticket', ticketSchema);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'N$1kQ2025_DB';
 
@@ -38,9 +22,17 @@ const authenticate = (req, res, next) => {
 // Get ALL tickets (Shared among devs)
 app.get('/', authenticate, async (req, res) => {
   try {
-    const tickets = await Ticket.find().sort({ createdAt: -1 });
+    const tickets = await prisma.ticket.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        createdBy: {
+          select: { email: true }
+        }
+      }
+    });
     res.json(tickets);
   } catch (error) {
+    console.error('Fetch tickets error:', error);
     res.status(500).json({ error: 'Failed to fetch tickets' });
   }
 });
@@ -48,10 +40,20 @@ app.get('/', authenticate, async (req, res) => {
 // Create ticket
 app.post('/', authenticate, async (req, res) => {
   try {
-    const ticket = new Ticket({ ...req.body, createdBy: req.userId });
-    await ticket.save();
+    const { title, description, status, priority, assignee } = req.body;
+    const ticket = await prisma.ticket.create({
+      data: {
+        title,
+        description,
+        status: status || 'To Do',
+        priority: priority || 'Medium',
+        assignee,
+        userId: req.userId
+      }
+    });
     res.status(201).json(ticket);
   } catch (error) {
+    console.error('Create ticket error:', error);
     res.status(400).json({ error: 'Failed to create ticket', details: error.message });
   }
 });
@@ -59,14 +61,23 @@ app.post('/', authenticate, async (req, res) => {
 // Update ticket
 app.put('/:id', authenticate, async (req, res) => {
   try {
-    const ticket = await Ticket.findOneAndUpdate(
-      { _id: req.params.id }, // No userId requirement so anyone can update
-      req.body,
-      { new: true }
-    );
-    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const id = parseInt(req.params.id);
+    const { title, description, status, priority, assignee } = req.body;
+    
+    const ticket = await prisma.ticket.update({
+      where: { id },
+      data: {
+        title,
+        description,
+        status,
+        priority,
+        assignee
+      }
+    });
+    
     res.json(ticket);
   } catch (error) {
+    console.error('Update ticket error:', error);
     res.status(400).json({ error: 'Failed to update ticket' });
   }
 });
@@ -74,10 +85,13 @@ app.put('/:id', authenticate, async (req, res) => {
 // Delete ticket
 app.delete('/:id', authenticate, async (req, res) => {
   try {
-    const ticket = await Ticket.findOneAndDelete({ _id: req.params.id });
-    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const id = parseInt(req.params.id);
+    await prisma.ticket.delete({
+      where: { id }
+    });
     res.json({ message: 'Deleted' });
   } catch (error) {
+    console.error('Delete ticket error:', error);
     res.status(500).json({ error: 'Failed to delete ticket' });
   }
 });

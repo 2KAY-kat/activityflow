@@ -1,24 +1,12 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const prisma = require('./prisma');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
-
-const connectDB = require('./db');
-
-// Execute connection (works in both Vercel serverless and local Express)
-connectDB().catch(console.error);
-
-const userSchema = new mongoose.Schema({
-    email: { type: String, unique: true, required: true },
-    password: { type: String, required: true }
-});
-
-const User = mongoose.model('User', userSchema);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'N$1kQ2025_DB';
 
@@ -29,13 +17,20 @@ app.post('/register', async (req, res) => {
         if (!email || !password) {
             return res.status(400).json({ error: 'Email and password are required' });
         }
-        const existingUser = await User.findOne({ email });
+        
+        const existingUser = await prisma.user.findUnique({
+            where: { email }
+        });
+
         if (existingUser) {
             return res.status(400).json({ error: 'User already exists' });
         }
+        
         const hashedPassword = await bcrypt.hash(password, 10);
-        const user = new User({ email, password: hashedPassword });
-        await user.save();
+        const user = await prisma.user.create({
+            data: { email, password: hashedPassword }
+        });
+        
         console.log('User created:', email);
         res.status(201).json({ message: 'User created' });
     } catch (error) {
@@ -51,11 +46,16 @@ app.post('/login', async (req, res) => {
         if (!email || !password) {
             return res.status(400).json({ error: 'Email and password are required' });
         }
-        const user = await User.findOne({ email });
+        
+        const user = await prisma.user.findUnique({
+            where: { email }
+        });
+
         if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
-        const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '1h' });
+        
+        const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
         console.log('User logged in:', email);
         res.json({ token });
     } catch (error) {
