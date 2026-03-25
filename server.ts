@@ -9,6 +9,7 @@ import health from './api/health';
 dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -30,7 +31,16 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running locally on http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+    console.log(`🚀 ActivityFlow is running on http://localhost:${PORT}`);
+});
+
+server.on('error', (error: any) => {
+    if (error.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${PORT} is already in use by another process.`);
+        console.error(`👉 Try changing the PORT in your .env file or killing the existing process.`);
+        process.exit(1);
+    } else {
+        console.error('SERVER ERROR:', error);
+    }
 });

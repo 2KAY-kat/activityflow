@@ -11,15 +11,17 @@ app.use(helmet());
 
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3005',
   'https://activitflow.vercel.app'
 ];
 
 app.use(cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin) || origin === 'null') {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error(`CORS blocked for: ${origin}`));
     }
   }
 }));
@@ -94,7 +96,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const idParam = req.params.id;
-    const id = parseInt(typeof idParam === 'string' ? idParam : idParam[0]!);
+    const id = parseInt(typeof idParam === 'string' ? idParam : idParam![0]);
     if (isNaN(id)) {
       return res.status(400).json({ error: 'Invalid ticket ID' });
     }
@@ -108,24 +110,14 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     }
     
     const { title, description, status, priority, assignee } = validation.data;
-    
     const ticket = await prisma.ticket.update({
       where: { id },
-      data: {
-        title,
-        description,
-        status,
-        priority,
-        assignee
-      }
+      data: { title, description, status, priority, assignee }
     });
-    
     res.json(ticket);
   } catch (error: any) {
     console.error('Update ticket error:', error);
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Ticket not found' });
-    }
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Ticket not found' });
     res.status(500).json({ error: 'Failed to update ticket' });
   }
 });
@@ -134,20 +126,14 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
 router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const idParam = req.params.id;
-    const id = parseInt(typeof idParam === 'string' ? idParam : idParam[0]!);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'Invalid ticket ID' });
-    }
+    const id = parseInt(typeof idParam === 'string' ? idParam : idParam![0]);
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid ticket ID' });
 
-    await prisma.ticket.delete({
-      where: { id }
-    });
+    await prisma.ticket.delete({ where: { id } });
     res.json({ message: 'Deleted' });
   } catch (error: any) {
     console.error('Delete ticket error:', error);
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Ticket not found' });
-    }
+    if (error.code === 'P2025') return res.status(404).json({ error: 'Ticket not found' });
     res.status(500).json({ error: 'Failed to delete ticket' });
   }
 });

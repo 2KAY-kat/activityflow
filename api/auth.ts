@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import helmet from 'helmet';
@@ -9,22 +9,26 @@ import prisma from './prisma';
 
 const app = express();
 app.use(express.json());
-app.use(helmet()); 
+app.use(helmet());
 
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3005',
   'https://activitflow.vercel.app'
 ];
 
 app.use(cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin) || origin === 'null') {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error(`CORS blocked for: ${origin}`));
     }
   }
 }));
+
+const router: Router = express.Router();
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -35,8 +39,6 @@ const authLimiter = rateLimit({
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'N$1kQ2025_DB';
-
-const router = express.Router();
 
 router.post('/register', authLimiter, async (req: Request, res: Response) => {
     try {
@@ -95,6 +97,8 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
     }
 });
 
+// For Vercel, the app might receive /api/auth/login or just /login depending on routing.
+// For local server.ts, it receives /login when mounted at /api/auth.
 app.use(['/api/auth', '/'], router);
 
 export default app;
