@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "postinstall": "prisma generate"
   },
   "repository": {
     "type": "git",
@@ -20,14 +21,12 @@
   "homepage": "https://github.com/2KAY-kat/activityflow#readme",
   "description": "",
   "dependencies": {
+    "@prisma/client": "^6.19.2",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "express": "^5.1.0",
-    "jsonwebtoken": "^9.0.2"
-  },
-  "devDependencies": {
-    "@prisma/client": "^6.19.2",
+    "jsonwebtoken": "^9.0.2",
     "prisma": "^6.19.2"
   }
 }
