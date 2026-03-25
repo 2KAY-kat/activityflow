@@ -441,6 +441,7 @@ h1, h2, h3, h4, h5, h6 {
     padding: 1.5rem;
     gap: 1.5rem;
     align-items: flex-start;
+    transition: all 0.3s ease;
 }
 
 .column {
@@ -452,6 +453,28 @@ h1, h2, h3, h4, h5, h6 {
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border-color);
+    transition: width 0.3s ease, min-width 0.3s ease;
+}
+
+@media (max-width: 768px) {
+    .board-container {
+        flex-direction: column;
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding: 1rem;
+        gap: 1.25rem;
+    }
+
+    .column {
+        width: 100%;
+        min-width: 100%;
+        max-height: none; /* Let columns grow vertically on mobile */
+    }
+
+    .column-body {
+        max-height: 500px; /* Limit height of column bodies on mobile to keep stacking readable */
+        overflow-y: auto;
+    }
 }
 
 .column-header {
