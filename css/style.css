@@ -112,6 +112,63 @@ body {
     gap: 1.5rem;
 }
 
+/* Status Indicator */
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition: all 0.3s ease;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--gray-400);
+    position: relative;
+}
+
+.status-indicator.online {
+    color: var(--emerald-500);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.status-indicator.online .status-dot {
+    background-color: var(--emerald-500);
+    box-shadow: 0 0 8px var(--emerald-500);
+}
+
+.status-indicator.offline {
+    color: var(--rose-500);
+    border-color: rgba(244, 63, 94, 0.3);
+}
+
+.status-indicator.offline .status-dot {
+    background-color: var(--rose-500);
+    box-shadow: 0 0 8px var(--rose-500);
+}
+
+.status-indicator.online .status-dot::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    border-radius: 50%;
+    background-color: var(--emerald-500);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 0.8; }
+    100% { transform: scale(2.5); opacity: 0; }
+}
+
 .user-profile {
     display: flex;
     align-items: center;
