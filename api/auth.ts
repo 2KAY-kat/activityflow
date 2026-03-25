@@ -15,6 +15,7 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3005',
+  'http://localhost:3010',
   'https://activitflow.vercel.app'
 ];
 
@@ -29,7 +30,6 @@ app.use(cors({
 }));
 
 const router: Router = express.Router();
-
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -40,7 +40,8 @@ const authLimiter = rateLimit({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'N$1kQ2025_DB';
 
-router.post('/register', authLimiter, async (req: Request, res: Response) => {
+// Bulletproof routing matching both /login and /api/auth/login
+router.post(['/register', '/api/auth/register'], authLimiter, async (req: Request, res: Response) => {
     try {
         const validation = authSchema.safeParse(req.body);
         if (!validation.success) {
@@ -52,18 +53,11 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
         
         const { email, password } = validation.data;
         
-        const existingUser = await prisma.user.findUnique({
-            where: { email }
-        });
-
-        if (existingUser) {
-            return res.status(400).json({ error: 'User already exists' });
-        }
+        const existingUser = await prisma.user.findUnique({ where: { email } });
+        if (existingUser) return res.status(400).json({ error: 'User already exists' });
         
         const hashedPassword = await bcrypt.hash(password, 10);
-        await prisma.user.create({
-            data: { email, password: hashedPassword }
-        });
+        await prisma.user.create({ data: { email, password: hashedPassword } });
         
         res.status(201).json({ message: 'User created' });
     } catch (error: any) {
@@ -72,18 +66,13 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
     }
 });
 
-router.post('/login', authLimiter, async (req: Request, res: Response) => {
+router.post(['/login', '/api/auth/login'], authLimiter, async (req: Request, res: Response) => {
     try {
         const validation = authSchema.safeParse(req.body);
-        if (!validation.success) {
-            return res.status(400).json({ error: 'Invalid input format' });
-        }
+        if (!validation.success) return res.status(400).json({ error: 'Invalid input format' });
 
         const { email, password } = validation.data;
-        
-        const user = await prisma.user.findUnique({
-            where: { email }
-        });
+        const user = await prisma.user.findUnique({ where: { email } });
 
         if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(401).json({ error: 'Invalid credentials' });
@@ -97,8 +86,5 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
     }
 });
 
-// For Vercel, the app might receive /api/auth/login or just /login depending on routing.
-// For local server.ts, it receives /login when mounted at /api/auth.
-app.use(['/api/auth', '/'], router);
-
+app.use(router);
 export default app;

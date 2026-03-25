@@ -13,6 +13,7 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3005',
+  'http://localhost:3010',
   'https://activitflow.vercel.app'
 ];
 
@@ -45,16 +46,11 @@ const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
 
 const router: Router = express.Router();
 
-// Get ALL tickets
-router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
+router.get(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const tickets = await prisma.ticket.findMany({
       orderBy: { createdAt: 'desc' },
-      include: {
-        createdBy: {
-          select: { email: true }
-        }
-      }
+      include: { createdBy: { select: { email: true } } }
     });
     res.json(tickets);
   } catch (error) {
@@ -63,27 +59,16 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Create ticket
-router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
+router.post(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const validation = ticketSchema.safeParse(req.body);
     if (!validation.success) {
-      return res.status(400).json({ 
-        error: 'Validation failed', 
-        details: validation.error.format() 
-      });
+      return res.status(400).json({ error: 'Validation failed', details: validation.error.format() });
     }
 
     const { title, description, status, priority, assignee } = validation.data;
     const ticket = await prisma.ticket.create({
-      data: {
-        title,
-        description,
-        status,
-        priority,
-        assignee,
-        userId: req.userId!
-      }
+      data: { title, description, status, priority, assignee, userId: req.userId! }
     });
     res.status(201).json(ticket);
   } catch (error: any) {
@@ -92,21 +77,15 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Update ticket
-router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const idParam = req.params.id;
     const id = parseInt(typeof idParam === 'string' ? idParam : idParam![0]);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'Invalid ticket ID' });
-    }
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid ticket ID' });
     
     const validation = ticketUpdateSchema.safeParse(req.body);
     if (!validation.success) {
-      return res.status(400).json({ 
-        error: 'Validation failed', 
-        details: validation.error.format() 
-      });
+      return res.status(400).json({ error: 'Validation failed', details: validation.error.format() });
     }
     
     const { title, description, status, priority, assignee } = validation.data;
@@ -122,8 +101,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Delete ticket
-router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+router.delete(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const idParam = req.params.id;
     const id = parseInt(typeof idParam === 'string' ? idParam : idParam![0]);
@@ -138,6 +116,5 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
-app.use(['/api/tickets', '/'], router);
-
+app.use(router);
 export default app;

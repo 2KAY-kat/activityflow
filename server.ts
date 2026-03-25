@@ -14,13 +14,19 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Serve static assets from the root
-app.use(express.static(path.join(__dirname)));
+// Diagnostic Logger
+app.use((req: Request, res: Response, next: NextFunction) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    next();
+});
 
-// API Routes
+// API Routes - MUST be above express.static to avoid conflicts with 'api' directory
 app.use('/api/auth', auth);
 app.use('/api/tickets', tickets);
 app.use('/api/health', health);
+
+// Serve static assets from the root
+app.use(express.static(path.join(__dirname)));
 
 // SPA Fallback: send index.html for any unmatched route
 app.use((req: Request, res: Response, next: NextFunction) => {

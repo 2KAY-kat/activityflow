@@ -11,6 +11,7 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3005',
+  'http://localhost:3010',
   'https://activitflow.vercel.app'
 ];
 
@@ -26,7 +27,7 @@ app.use(cors({
 
 const router: Router = express.Router();
 
-router.get('/', async (req: Request, res: Response) => {
+router.get(['/', '/api/health'], async (req: Request, res: Response) => {
     try {
         await prisma.$queryRaw`SELECT 1`;
         res.json({ status: 'ok', database: 'connected', timestamp: new Date().toISOString() });
@@ -36,6 +37,5 @@ router.get('/', async (req: Request, res: Response) => {
     }
 });
 
-app.use(['/api/health', '/'], router);
-
+app.use(router);
 export default app;
