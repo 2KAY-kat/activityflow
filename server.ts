@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import auth from './api/auth';
 import tickets from './api/tickets';
 import health from './api/health';
+import teams from './api/teams';
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use('/api/auth', auth);
 app.use('/api/tickets', tickets);
 app.use('/api/health', health);
+app.use('/api/teams', teams);
 
 // Serve static assets from the root
 app.use(express.static(path.join(__dirname)));

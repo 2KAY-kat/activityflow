@@ -22,6 +22,7 @@
                 <button id="headerNewTicket" class="btn btn-primary" onclick="openTicketModal()" style="display: none;"><i class="fa-solid fa-plus"></i> <span>New Ticket</span></button>
                 <button id="headerLogin" class="btn btn-primary" onclick="document.getElementById('authModal').classList.add('active')" style="display: none;"><i class="fa-solid fa-right-to-bracket"></i> <span>Sign In</span></button>
                 <div class="user-profile">
+                    <button class="icon-btn" onclick="openTeamsModal()" title="Teams"><i class="fa-solid fa-users"></i></button>
                     <button class="icon-btn" onclick="toggleTheme()" title="Toggle Theme"><i class="fa-solid fa-moon" id="themeIcon"></i></button>
                     <button class="icon-btn" onclick="syncData()" title="Sync Data"><i class="fa-solid fa-rotate"></i></button>
                     <button class="icon-btn" id="logoutBtn" onclick="logout()" title="Logout" style="display: none;"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
@@ -149,6 +150,12 @@
                         <option value="To Do" selected>To Do</option>
                         <option value="In Progress">In Progress</option>
                         <option value="Done">Done</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="ticketAssignee">Assignee</label>
+                    <select id="ticketAssignee" class="form-control">
+                        <option value="">Unassigned</option>
                     </select>
                 </div>
                 <div class="modal-footer">

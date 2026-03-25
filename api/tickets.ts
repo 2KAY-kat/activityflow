@@ -47,10 +47,16 @@ const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
 const router: Router = express.Router();
 
 router.get(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: Response) => {
+  const teamId = req.query.teamId ? parseInt(req.query.teamId as string) : undefined;
+  
   try {
     const tickets = await prisma.ticket.findMany({
+      where: teamId ? { teamId } : { userId: req.userId }, 
       orderBy: { createdAt: 'desc' },
-      include: { createdBy: { select: { email: true } } }
+      include: { 
+        createdBy: { select: { email: true } },
+        assignee: { select: { id: true, email: true } }
+      }
     });
     res.json(tickets);
   } catch (error) {
@@ -66,10 +72,29 @@ router.post(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: R
       return res.status(400).json({ error: 'Validation failed', details: validation.error.format() });
     }
 
-    const { title, description, status, priority, assignee } = validation.data;
+    const { title, description, status, priority, assigneeId, teamId } = validation.data;
+    
+    if (!teamId) return res.status(400).json({ error: 'Team ID is required' });
+
     const ticket = await prisma.ticket.create({
-      data: { title, description, status, priority, assignee, userId: req.userId! }
+      data: { 
+        title, 
+        description, 
+        status, 
+        priority, 
+        assigneeId, 
+        teamId, 
+        userId: req.userId! 
+      },
+      include: { assignee: { select: { email: true } } }
     });
+
+    if (assigneeId && ticket.assignee) {
+      const { sendAssignmentEmail } = require('./utils/email');
+      const creator = await prisma.user.findUnique({ where: { id: req.userId } });
+      sendAssignmentEmail(ticket.assignee.email, title, creator?.email || 'A Team Member').catch(console.error);
+    }
+
     res.status(201).json(ticket);
   } catch (error: any) {
     console.error('Create ticket error:', error);
@@ -88,11 +113,22 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
       return res.status(400).json({ error: 'Validation failed', details: validation.error.format() });
     }
     
-    const { title, description, status, priority, assignee } = validation.data;
+    const { title, description, status, priority, assigneeId, teamId } = validation.data;
+    
+    const oldTicket = await prisma.ticket.findUnique({ where: { id }, include: { assignee: true } });
+    
     const ticket = await prisma.ticket.update({
       where: { id },
-      data: { title, description, status, priority, assignee }
+      data: { title, description, status, priority, assigneeId, teamId },
+      include: { assignee: { select: { email: true } } }
     });
+
+    if (assigneeId && assigneeId !== oldTicket?.assigneeId && ticket.assignee) {
+      const { sendAssignmentEmail } = require('./utils/email');
+      const updater = await prisma.user.findUnique({ where: { id: req.userId } });
+      sendAssignmentEmail(ticket.assignee.email, title || ticket.title, updater?.email || 'A Team Member').catch(console.error);
+    }
+
     res.json(ticket);
   } catch (error: any) {
     console.error('Update ticket error:', error);

@@ -12,7 +12,8 @@ export const ticketSchema = z.object({
   description: z.string().optional().nullable(),
   status: z.enum(['To Do', 'In Progress', 'Done']).default('To Do'),
   priority: z.enum(['Low', 'Medium', 'High']).default('Medium'),
-  assignee: z.string().optional().nullable(),
+  assigneeId: z.number().int().optional().nullable(),
+  teamId: z.number().int().optional().nullable(),
 });
 
 // Partial schema for updates (all fields optional)
