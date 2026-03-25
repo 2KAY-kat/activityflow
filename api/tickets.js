@@ -19,8 +19,10 @@ const authenticate = (req, res, next) => {
   });
 };
 
+const router = express.Router();
+
 // Get ALL tickets (Shared among devs)
-app.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, async (req, res) => {
   try {
     const tickets = await prisma.ticket.findMany({
       orderBy: { createdAt: 'desc' },
@@ -38,7 +40,7 @@ app.get('/', authenticate, async (req, res) => {
 });
 
 // Create ticket
-app.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, async (req, res) => {
   try {
     const { title, description, status, priority, assignee } = req.body;
     const ticket = await prisma.ticket.create({
@@ -59,7 +61,7 @@ app.post('/', authenticate, async (req, res) => {
 });
 
 // Update ticket
-app.put('/:id', authenticate, async (req, res) => {
+router.put('/:id', authenticate, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
@@ -90,7 +92,7 @@ app.put('/:id', authenticate, async (req, res) => {
 });
 
 // Delete ticket
-app.delete('/:id', authenticate, async (req, res) => {
+router.delete('/:id', authenticate, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
@@ -109,5 +111,9 @@ app.delete('/:id', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Failed to delete ticket' });
   }
 });
+
+// Mount the router at both the base and the full API path to support both 
+// local Express and Vercel serverless routing
+app.use(['/api/tickets', '/'], router);
 
 module.exports = app;

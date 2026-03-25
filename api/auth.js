@@ -10,7 +10,9 @@ app.use(cors());
 
 const JWT_SECRET = process.env.JWT_SECRET || 'N$1kQ2025_DB';
 
-app.post('/register', async (req, res) => {
+const router = express.Router();
+
+router.post('/register', async (req, res) => {
     console.log('Received /api/auth/register request:', req.body);
     try {
         const { email, password } = req.body;
@@ -39,7 +41,7 @@ app.post('/register', async (req, res) => {
     }
 });
 
-app.post('/login', async (req, res) => {
+router.post('/login', async (req, res) => {
     console.log('Received /api/auth/login request:', req.body);
     try {
         const { email, password } = req.body;
@@ -65,9 +67,13 @@ app.post('/login', async (req, res) => {
 });
 
 // Test route to verify API is running
-app.get('/test', (req, res) => {
+router.get('/test', (req, res) => {
     console.log('Received /api/auth/test request');
     res.json({ message: 'Auth API is running' });
 });
 
-module.exports = app;
+// Mount the router at both the base and the full API path to support both 
+// local Express and Vercel serverless routing
+app.use(['/api/auth', '/'], router);
+
+module.exports = app;
