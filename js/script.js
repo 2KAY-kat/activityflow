@@ -28,6 +28,10 @@ window.drop = drop;
 document.addEventListener('DOMContentLoaded', () => {
     initializeTheme();
     checkAuth();
+    checkSystemHealth();
+    
+    // Poll system health every 30 seconds
+    setInterval(checkSystemHealth, 30000);
 
     document.getElementById('authForm').addEventListener('submit', handleAuth);
     document.getElementById('ticketForm').addEventListener('submit', saveTicket);
@@ -36,6 +40,26 @@ document.addEventListener('DOMContentLoaded', () => {
         loadTickets();
     }
 });
+
+async function checkSystemHealth() {
+    const statusEl = document.getElementById('systemStatus');
+    const statusText = statusEl.querySelector('.status-text');
+    
+    try {
+        const res = await fetch('/api/health');
+        if (res.ok) {
+            statusEl.className = 'status-indicator online';
+            statusText.textContent = 'System OK';
+            statusEl.title = 'System Status: Connected to Database';
+        } else {
+            throw new Error('Health check failed');
+        }
+    } catch (error) {
+        statusEl.className = 'status-indicator offline';
+        statusText.textContent = 'System Offline';
+        statusEl.title = 'System Status: Database Connection Error';
+    }
+}
 
 function initializeTheme() {
     const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
