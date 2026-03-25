@@ -8,15 +8,10 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => {
-    console.log('MongoDB connected successfully (auth api)');
-}).catch(err => {
-    console.error('MongoDB connection error (auth api):', err);
-});
+const connectDB = require('./db');
+
+// Execute connection (works in both Vercel serverless and local Express)
+connectDB().catch(console.error);
 
 const userSchema = new mongoose.Schema({
     email: { type: String, unique: true, required: true },

@@ -20,11 +20,13 @@
   "homepage": "https://github.com/2KAY-kat/activityflow#readme",
   "description": "",
   "dependencies": {
+    "@prisma/client": "^7.5.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.19.1"
+    "mongoose": "^8.19.1",
+    "prisma": "^7.5.0"
   }
 }
