@@ -1,9 +1,8 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import prisma from './prisma';
 
-const prisma = new PrismaClient();
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'N$1kQ2025_DB';
 
@@ -15,13 +14,13 @@ const authenticate = (req: any, res: any, next: any) => {
     const token = authHeader.split(' ')[1];
     jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
         if (err) return res.status(401).json({ error: 'Invalid token' });
-        req.user = decoded;
+        req.userId = decoded.userId;
         next();
     });
 };
 
 // Create a team
-router.post('/', authenticate, async (req: any, res: any) => {
+router.post(['/', '/api/teams'], authenticate, async (req: any, res: any) => {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'Team name is required' });
 
@@ -34,7 +33,7 @@ router.post('/', authenticate, async (req: any, res: any) => {
                 inviteCode,
                 members: {
                     create: {
-                        userId: req.user.userId,
+                        userId: req.userId,
                         role: 'OWNER'
                     }
                 }
@@ -52,7 +51,7 @@ router.post('/', authenticate, async (req: any, res: any) => {
 });
 
 // Join a team via invite code
-router.post('/join', authenticate, async (req: any, res: any) => {
+router.post(['/join', '/api/teams/join'], authenticate, async (req: any, res: any) => {
     const { inviteCode } = req.body;
     if (!inviteCode) return res.status(400).json({ error: 'Invite code is required' });
 
@@ -67,7 +66,7 @@ router.post('/join', authenticate, async (req: any, res: any) => {
         const existingMember = await prisma.teamMember.findUnique({
             where: {
                 userId_teamId: {
-                    userId: req.user.userId,
+                    userId: req.userId,
                     teamId: team.id
                 }
             }
@@ -77,7 +76,7 @@ router.post('/join', authenticate, async (req: any, res: any) => {
 
         await prisma.teamMember.create({
             data: {
-                userId: req.user.userId,
+                userId: req.userId,
                 teamId: team.id,
                 role: 'MEMBER'
             }
@@ -91,10 +90,10 @@ router.post('/join', authenticate, async (req: any, res: any) => {
 });
 
 // Get user's teams
-router.get('/', authenticate, async (req: any, res: any) => {
+router.get(['/', '/api/teams'], authenticate, async (req: any, res: any) => {
     try {
         const memberships = await prisma.teamMember.findMany({
-            where: { userId: req.user.userId },
+            where: { userId: req.userId },
             include: {
                 team: {
                     include: {
@@ -113,7 +112,7 @@ router.get('/', authenticate, async (req: any, res: any) => {
 });
 
 // Get team members
-router.get('/:teamId/members', authenticate, async (req: any, res: any) => {
+router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, async (req: any, res: any) => {
     const teamId = parseInt(req.params.teamId);
 
     try {
@@ -121,7 +120,7 @@ router.get('/:teamId/members', authenticate, async (req: any, res: any) => {
         const membership = await prisma.teamMember.findUnique({
             where: {
                 userId_teamId: {
-                    userId: req.user.userId,
+                    userId: req.userId,
                     teamId
                 }
             }
@@ -150,7 +149,6 @@ router.get('/:teamId/members', authenticate, async (req: any, res: any) => {
 
 const app = express();
 app.use(express.json());
-// Universal routing for both absolute (Vercel) and mounted (Express) paths
-app.use(['/api/teams', '/'], router);
+app.use(router);
 
 export default app;
