@@ -1,7 +1,12 @@
-const express = require('express');
-const path = require('path');
-const cors = require('cors');
-require('dotenv').config();
+import express, { Request, Response, NextFunction } from 'express';
+import path from 'path';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import auth from './api/auth';
+import tickets from './api/tickets';
+import health from './api/health';
+
+dotenv.config();
 
 const app = express();
 
@@ -9,18 +14,15 @@ app.use(cors());
 app.use(express.json());
 
 // Serve static assets from the root
-// (css, js, sw.js, manifest.json, etc.)
 app.use(express.static(path.join(__dirname)));
 
 // API Routes
-const auth = require('./api/auth');
-const tickets = require('./api/tickets');
-
 app.use('/api/auth', auth);
 app.use('/api/tickets', tickets);
+app.use('/api/health', health);
 
 // SPA Fallback: send index.html for any unmatched route
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.method === 'GET' && !req.path.startsWith('/api/')) {
         res.sendFile(path.join(__dirname, 'index.html'));
     } else {

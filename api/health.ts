@@ -1,7 +1,7 @@
-const express = require('express');
-const helmet = require('helmet');
-const cors = require('cors');
-const prisma = require('./prisma');
+import express, { Request, Response, Router } from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import prisma from './prisma';
 
 const app = express();
 app.use(express.json());
@@ -23,14 +23,14 @@ app.use(cors({
   }
 }));
 
-const router = express.Router();
+const router: Router = express.Router();
 
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response) => {
     try {
         // Ping the database
         await prisma.$queryRaw`SELECT 1`;
         res.json({ status: 'ok', database: 'connected', timestamp: new Date().toISOString() });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Health check error:', error);
         res.status(500).json({ status: 'error', database: 'disconnected', details: error.message });
     }
@@ -38,4 +38,4 @@ router.get('/', async (req, res) => {
 
 app.use(['/api/health', '/'], router);
 
-module.exports = app;
+export default app;
