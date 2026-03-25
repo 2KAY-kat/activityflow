@@ -1,11 +1,27 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const cors = require('cors');
+const helmet = require('helmet');
 const prisma = require('./prisma');
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(helmet());
+
+// CORS configuration - restrict to your domain
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://activitflow.vercel.app'
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+}));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'N$1kQ2025_DB';
 

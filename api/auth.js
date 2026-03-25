@@ -1,18 +1,44 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const prisma = require('./prisma');
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(helmet()); // Secure HTTP headers
+
+// CORS configuration - restrict to your front-end domain in production
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://activitflow.vercel.app' // Replace with your production URL
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+}));
+
+// Rate limiting for auth routes (100 requests per 15 minutes)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: 'Too many requests from this IP, please try again after 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const JWT_SECRET = process.env.JWT_SECRET || 'N$1kQ2025_DB';
 
 const router = express.Router();
 
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
     console.log('Received /api/auth/register request:', req.body);
     try {
         const { email, password } = req.body;
@@ -41,7 +67,7 @@ router.post('/register', async (req, res) => {
     }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
     console.log('Received /api/auth/login request:', req.body);
     try {
         const { email, password } = req.body;
