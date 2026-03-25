@@ -273,6 +273,7 @@ body {
     background: linear-gradient(135deg, var(--blue-500), var(--emerald-500));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .hero-subtitle {
@@ -508,7 +509,15 @@ h1, h2, h3, h4, h5, h6 {
     padding: 1.5rem;
     gap: 1.5rem;
     align-items: flex-start;
+    justify-content: center; /* Center the board */
     transition: all 0.3s ease;
+}
+
+/* Ensure horizontal scrolling works correctly when centered content overflows */
+@media (max-width: 1200px) {
+    .board-container {
+        justify-content: flex-start;
+    }
 }
 
 .column {
