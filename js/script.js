@@ -126,10 +126,12 @@ function toggleAuthMode() {
 
 async function handleAuth(e) {
     e.preventDefault();
+    const btn = document.getElementById('authSubmitBtn');
     const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
     const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
 
+    setLoading(btn, true);
     try {
         const res = await fetch(endpoint, {
             method: 'POST',
@@ -154,6 +156,8 @@ async function handleAuth(e) {
         }
     } catch (error) {
         toast.show('Network error', 'error');
+    } finally {
+        setLoading(btn, false);
     }
 }
 
@@ -270,6 +274,7 @@ async function saveTicket(e) {
     e.preventDefault();
     if (!authToken) return;
 
+    const btn = document.getElementById('saveTicketBtn');
     const ticketData = {
         title: document.getElementById('ticketTitle').value,
         description: document.getElementById('ticketDescription').value,
@@ -282,6 +287,7 @@ async function saveTicket(e) {
     const url = isUpdate ? `/api/tickets/${editingTicketId}` : '/api/tickets';
     const method = isUpdate ? 'PUT' : 'POST';
 
+    setLoading(btn, true);
     try {
         const res = await fetch(url, {
             method,
@@ -301,6 +307,19 @@ async function saveTicket(e) {
         }
     } catch (error) {
         toast.show('Network error', 'error');
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+function setLoading(button, isLoading) {
+    if (!button) return;
+    if (isLoading) {
+        button.classList.add('btn-loading');
+        button.disabled = true;
+    } else {
+        button.classList.remove('btn-loading');
+        button.disabled = false;
     }
 }
 

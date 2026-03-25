@@ -63,6 +63,42 @@ body {
     transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--gray-700);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--gray-600);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+    background: var(--gray-300);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+    background: var(--gray-400);
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--gray-700) transparent;
+}
+
+[data-theme="light"] * {
+    scrollbar-color: var(--gray-300) transparent;
+}
+
 /* Header */
 .app-header {
     background-color: var(--bg-header);
@@ -409,8 +445,39 @@ h1, h2, h3, h4, h5, h6 {
     background-color: #e11d48;
 }
 
-.btn-block {
-    width: 100%;
+.btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.btn-loading {
+    position: relative;
+    color: transparent !important;
+    pointer-events: none;
+}
+
+.btn-loading::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-top: -8px;
+    margin-left: -8px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 0.6s linear infinite;
+}
+
+.btn-ghost.btn-loading::after {
+    border: 2px solid rgba(59, 130, 246, 0.2);
+    border-top-color: var(--blue-500);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 
 .icon-btn {
