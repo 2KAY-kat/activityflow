@@ -101,7 +101,6 @@ function checkAuth() {
         logoutBtn.style.display = 'flex';
         loadTickets();
     } else {
-        authModal.classList.add('active');
         if (landingPage) landingPage.style.display = 'flex';
         if (dashboard) dashboard.style.display = 'none';
         logoutBtn.style.display = 'none';

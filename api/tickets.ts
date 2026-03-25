@@ -93,7 +93,8 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 // Update ticket
 router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const idParam = req.params.id;
+    const id = parseInt(typeof idParam === 'string' ? idParam : idParam[0]!);
     if (isNaN(id)) {
       return res.status(400).json({ error: 'Invalid ticket ID' });
     }
@@ -132,7 +133,8 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
 // Delete ticket
 router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const idParam = req.params.id;
+    const id = parseInt(typeof idParam === 'string' ? idParam : idParam[0]!);
     if (isNaN(id)) {
       return res.status(400).json({ error: 'Invalid ticket ID' });
     }
