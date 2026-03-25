@@ -44,19 +44,17 @@ async function checkSystemHealth() {
     const footerStatus = document.getElementById('footerHealth');
     
     const updateUI = (isOnline) => {
-        [headerStatus, footerStatus].forEach(el => {
-            if (!el) return;
-            const text = el.querySelector('.status-text');
-            if (isOnline) {
-                el.className = 'status-indicator online';
-                text.textContent = 'System OK';
-                el.title = 'System Status: Connected to Database';
-            } else {
-                el.className = 'status-indicator offline';
-                text.textContent = 'System Offline';
-                el.title = 'System Status: Database Connection Error';
-            }
-        });
+        if (!footerStatus) return;
+        const text = footerStatus.querySelector('.status-text');
+        if (isOnline) {
+            footerStatus.className = 'status-indicator online';
+            if (text) text.textContent = 'System OK';
+            footerStatus.title = 'System Status: Connected to Database';
+        } else {
+            footerStatus.className = 'status-indicator offline';
+            if (text) text.textContent = 'System Offline';
+            footerStatus.title = 'System Status: Database Connection Error';
+        }
     };
 
     try {
