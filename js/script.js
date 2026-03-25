@@ -171,7 +171,7 @@ function renderBoard() {
         const card = document.createElement('div');
         card.className = 'ticket-card';
         card.draggable = true;
-        card.ondragstart = (e) => dragStart(e, ticket._id);
+        card.ondragstart = (e) => dragStart(e, ticket.id);
         
         const priorityLower = ticket.priority.toLowerCase();
         const initials = ticket.assignee ? ticket.assignee.substring(0,2).toUpperCase() : '??';
@@ -180,8 +180,8 @@ function renderBoard() {
             <div class="ticket-header">
                 <div class="ticket-title">${ticket.title}</div>
                 <div class="ticket-actions">
-                    <button class="icon-btn edit" onclick="editTicket('${ticket._id}')" title="Edit"><i class="fa-solid fa-pen"></i></button>
-                    <button class="icon-btn delete" onclick="promptDeleteTicket('${ticket._id}')" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    <button class="icon-btn edit" onclick="editTicket('${ticket.id}')" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <button class="icon-btn delete" onclick="promptDeleteTicket('${ticket.id}')" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </div>
             </div>
             ${ticket.description ? `<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${ticket.description}</div>` : ''}
@@ -249,7 +249,7 @@ async function saveTicket(e) {
 }
 
 function editTicket(id) {
-    const ticket = tickets.find(t => t._id === id);
+    const ticket = tickets.find(t => t.id == id);
     if (!ticket) return;
 
     editingTicketId = id;
@@ -322,7 +322,7 @@ async function drop(e) {
     if (!column) return;
 
     const newStatus = column.getAttribute('data-status');
-    const ticket = tickets.find(t => t._id === id);
+    const ticket = tickets.find(t => t.id == id);
 
     if (ticket && ticket.status !== newStatus) {
         // Optimistic UI update

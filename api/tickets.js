@@ -62,6 +62,10 @@ app.post('/', authenticate, async (req, res) => {
 app.put('/:id', authenticate, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'Invalid ticket ID' });
+    }
+    
     const { title, description, status, priority, assignee } = req.body;
     
     const ticket = await prisma.ticket.update({
@@ -78,7 +82,10 @@ app.put('/:id', authenticate, async (req, res) => {
     res.json(ticket);
   } catch (error) {
     console.error('Update ticket error:', error);
-    res.status(400).json({ error: 'Failed to update ticket' });
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    res.status(500).json({ error: 'Failed to update ticket' });
   }
 });
 
@@ -86,12 +93,19 @@ app.put('/:id', authenticate, async (req, res) => {
 app.delete('/:id', authenticate, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'Invalid ticket ID' });
+    }
+
     await prisma.ticket.delete({
       where: { id }
     });
     res.json({ message: 'Deleted' });
   } catch (error) {
     console.error('Delete ticket error:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
     res.status(500).json({ error: 'Failed to delete ticket' });
   }
 });
