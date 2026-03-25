@@ -19,7 +19,8 @@
             </div>
             
             <div class="header-controls">
-                <button class="btn btn-primary" onclick="openTicketModal()"><i class="fa-solid fa-plus"></i> <span>New Ticket</span></button>
+                <button id="headerNewTicket" class="btn btn-primary" onclick="openTicketModal()" style="display: none;"><i class="fa-solid fa-plus"></i> <span>New Ticket</span></button>
+                <button id="headerLogin" class="btn btn-primary" onclick="document.getElementById('authModal').classList.add('active')" style="display: none;"><i class="fa-solid fa-right-to-bracket"></i> <span>Sign In</span></button>
                 <div class="user-profile">
                     <button class="icon-btn" onclick="toggleTheme()" title="Toggle Theme"><i class="fa-solid fa-moon" id="themeIcon"></i></button>
                     <button class="icon-btn" onclick="syncData()" title="Sync Data"><i class="fa-solid fa-rotate"></i></button>
@@ -98,7 +99,7 @@
     <footer class="app-footer">
         <div class="footer-container">
             <div class="footer-info">
-                <p>&copy; 2026 ActivityFlow Systems. All rights reserved.</p>
+                <p>&copy; 2026 zennertekh All rights reserved.</p>
             </div>
             <div class="footer-status">
                 <div id="footerHealth" class="status-indicator">

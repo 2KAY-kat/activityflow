@@ -91,17 +91,23 @@ function checkAuth() {
     const landingPage = document.getElementById('landingPage');
     const dashboard = document.getElementById('dashboard');
     const logoutBtn = document.getElementById('logoutBtn');
+    const headerNewTicket = document.getElementById('headerNewTicket');
+    const headerLogin = document.getElementById('headerLogin');
     
     if (authToken) {
         authModal.classList.remove('active');
         if (landingPage) landingPage.style.display = 'none';
         if (dashboard) dashboard.style.display = 'flex';
-        logoutBtn.style.display = 'flex';
+        if (logoutBtn) logoutBtn.style.display = 'flex';
+        if (headerNewTicket) headerNewTicket.style.display = 'flex';
+        if (headerLogin) headerLogin.style.display = 'none';
         loadTickets();
     } else {
         if (landingPage) landingPage.style.display = 'flex';
         if (dashboard) dashboard.style.display = 'none';
-        logoutBtn.style.display = 'none';
+        if (logoutBtn) logoutBtn.style.display = 'none';
+        if (headerNewTicket) headerNewTicket.style.display = 'none';
+        if (headerLogin) headerLogin.style.display = 'flex';
         tickets = [];
         renderBoard();
     }
