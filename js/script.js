@@ -3,14 +3,17 @@ import { Toast } from './toast.js';
 let tickets = [];
 let editingTicketId = null;
 let ticketToDelete = null;
+let teamToDelete = null;
 let draggedTicketId = null;
 const toast = new Toast();
 let authToken = localStorage.getItem('authToken');
 let isLoginMode = true;
 let currentTeamId = localStorage.getItem('currentTeamId');
+let currentUser = null;
 let myTeams = [];
 let teamMembers = [];
 let githubRepositories = [];
+let githubInstallations = [];
 let pendingGitHubInstall = null;
 let selectedTeamGitHubStatus = null;
 let pendingInviteContext = null;
@@ -40,6 +43,9 @@ window.editTicket = editTicket;
 window.promptDeleteTicket = promptDeleteTicket;
 window.closeDeleteModal = closeDeleteModal;
 window.confirmDelete = confirmDelete;
+window.promptDeleteTeam = promptDeleteTeam;
+window.closeDeleteTeamModal = closeDeleteTeamModal;
+window.confirmDeleteTeam = confirmDeleteTeam;
 window.toggleAuthMode = toggleAuthMode;
 
 // Drag and drop handlers
@@ -184,6 +190,69 @@ function startGitHubLogin() {
     window.location.href = `/api/auth/github/start?returnTo=${encodeURIComponent(returnTo)}`;
 }
 
+function getCurrentUserLabel() {
+    if (!currentUser) return 'Unknown User';
+    return currentUser.githubLogin || currentUser.email || 'Unknown User';
+}
+
+function getCurrentUserAvatarMarkup() {
+    if (currentUser?.githubAvatarUrl) {
+        return `<img src="${currentUser.githubAvatarUrl}" alt="${getCurrentUserLabel()}">`;
+    }
+
+    return getCurrentUserLabel().substring(0, 2).toUpperCase();
+}
+
+function renderCurrentUserBadge() {
+    const badge = document.getElementById('currentUserBadge');
+    if (!badge) return;
+
+    if (!authToken || !currentUser) {
+        badge.style.display = 'none';
+        badge.innerHTML = '';
+        return;
+    }
+
+    const secondary = currentUser.githubLogin && currentUser.email && currentUser.githubLogin !== currentUser.email
+        ? currentUser.email
+        : currentUser.authSource === 'GITHUB'
+            ? 'GitHub account'
+            : 'Email account';
+
+    badge.style.display = 'inline-flex';
+    badge.innerHTML = `
+        <div class="user-badge-avatar">${getCurrentUserAvatarMarkup()}</div>
+        <div class="user-badge-text">
+            <span class="user-badge-label">Signed In</span>
+            <span class="user-badge-value" title="${getCurrentUserLabel()}">${getCurrentUserLabel()}</span>
+        </div>
+    `;
+    badge.title = secondary;
+}
+
+async function loadCurrentUser() {
+    if (!authToken) {
+        currentUser = null;
+        renderCurrentUserBadge();
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/auth/me', {
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+
+        if (res.ok) {
+            currentUser = await res.json();
+            renderCurrentUserBadge();
+        } else if (res.status === 401) {
+            logout();
+        }
+    } catch (error) {
+        console.error('Failed to load current user:', error);
+    }
+}
+
 function updateThemeIcon(theme) {
     const themeIcon = document.getElementById('themeIcon');
     if (themeIcon) {
@@ -202,6 +271,11 @@ function checkAuth() {
     const syncBtn = document.querySelector('button[onclick="syncData()"]');
     
     if (authToken) {
+        if (!currentUser) {
+            loadCurrentUser();
+        } else {
+            renderCurrentUserBadge();
+        }
         authModal.classList.remove('active');
         if (landingPage) landingPage.style.display = 'none';
         if (dashboard) dashboard.style.display = 'flex';
@@ -230,6 +304,7 @@ function checkAuth() {
         tickets = [];
         teamMembers = [];
         renderBoard();
+        renderCurrentUserBadge();
 
         if (pendingInviteContext) {
             authModal.classList.add('active');
@@ -249,7 +324,7 @@ async function handlePendingGitHubInstall() {
     }
 
     toast.show(`GitHub App ${installState.setupAction === 'update' ? 'updated' : 'installed'}. Syncing repositories...`, 'success');
-    await syncGitHubRepositories();
+    await syncGitHubRepositories(installState.installationId);
 }
 
 async function handlePendingInviteContext() {
@@ -323,6 +398,7 @@ async function handleAuth(e) {
         if (res.ok) {
             if (isLoginMode) {
                 authToken = data.token;
+                currentUser = null;
                 localStorage.setItem('authToken', authToken);
                 currentTeamId = null;
                 localStorage.removeItem('currentTeamId');
@@ -346,6 +422,10 @@ async function handleAuth(e) {
 function logout() {
     authToken = null;
     currentTeamId = null;
+    currentUser = null;
+    githubRepositories = [];
+    githubInstallations = [];
+    selectedTeamGitHubStatus = null;
     localStorage.removeItem('authToken');
     localStorage.removeItem('currentTeamId');
     toast.show('Logged out', 'success');
@@ -403,6 +483,10 @@ function renderTeamGitHubStatus() {
     const emptyMessage = collaboratorCount === 0
         ? '<div style="margin-top: 10px; color: var(--text-muted);">No GitHub collaborators are synced yet. Install the app on the repo and run sync if you need to refresh access.</div>'
         : '';
+    const canManageGitHub = team?.isOwner || team?.currentUserRole === 'OWNER';
+    const syncAction = canManageGitHub
+        ? `<button id="teamGitHubSyncBtn" type="button" class="btn btn-ghost" onclick="syncTeamGitHubCollaborators()">Sync Collaborators</button>`
+        : '';
 
     container.style.display = 'block';
     container.innerHTML = `
@@ -417,13 +501,26 @@ function renderTeamGitHubStatus() {
                         ${collaboratorCount} collaborator${collaboratorCount === 1 ? '' : 's'} ready | ${linkedCollaboratorCount} linked to ActivityFlow users
                     </div>
                 </div>
-                <button id="teamGitHubSyncBtn" type="button" class="btn btn-ghost" onclick="syncTeamGitHubCollaborators()">
-                    Sync Collaborators
-                </button>
+                ${syncAction}
             </div>
             ${emptyMessage}
         </div>
     `;
+}
+
+function renderGitHubIntegrationControls() {
+    const installButton = document.getElementById('installGitHubAppBtn');
+    const syncButton = document.getElementById('syncGitHubReposBtn');
+    const sourceType = document.getElementById('newTeamSourceType')?.value || 'MANUAL';
+    const hasInstallation = githubInstallations.length > 0;
+
+    if (installButton) {
+        installButton.style.display = sourceType === 'GITHUB' && !hasInstallation ? 'inline-flex' : 'none';
+    }
+
+    if (syncButton) {
+        syncButton.style.display = sourceType === 'GITHUB' ? 'inline-flex' : 'none';
+    }
 }
 
 function renderGitHubRepositoryOptions() {
@@ -441,6 +538,8 @@ function toggleTeamSourceFields() {
     if (githubFields) {
         githubFields.style.display = sourceType === 'GITHUB' ? 'block' : 'none';
     }
+
+    renderGitHubIntegrationControls();
 }
 
 async function loadGitHubRepositories() {
@@ -457,6 +556,23 @@ async function loadGitHubRepositories() {
         }
     } catch (error) {
         console.error('Failed to load GitHub repositories:', error);
+    }
+}
+
+async function loadGitHubInstallations() {
+    if (!authToken) return;
+
+    try {
+        const res = await fetch('/api/github/installations', {
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+
+        if (res.ok) {
+            githubInstallations = await res.json();
+            renderGitHubIntegrationControls();
+        }
+    } catch (error) {
+        console.error('Failed to load GitHub installations:', error);
     }
 }
 
@@ -487,19 +603,24 @@ async function loadTeamGitHubStatus(teamId) {
     renderTeamGitHubStatus();
 }
 
-async function syncGitHubRepositories() {
+async function syncGitHubRepositories(installationId = null) {
     if (!authToken) return;
 
     try {
         const res = await fetch('/api/github/installations/sync', {
             method: 'POST',
-            headers: { Authorization: `Bearer ${authToken}` }
+            headers: {
+                Authorization: `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(installationId ? { installationId } : {})
         });
 
         const data = await res.json().catch(() => ({}));
 
         if (res.ok) {
             toast.show(`GitHub sync complete${data.repositoryCount ? ` (${data.repositoryCount} repos)` : ''}`, 'success');
+            await loadGitHubInstallations();
             await loadGitHubRepositories();
         } else {
             if (res.status === 409 && data.installUrl) {
@@ -833,7 +954,7 @@ async function drop(e) {
 
         // API Request
         try {
-            await fetch(`/api/tickets/${id}`, {
+            const res = await fetch(`/api/tickets/${id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -841,8 +962,12 @@ async function drop(e) {
                 },
                 body: JSON.stringify({ status: newStatus })
             });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'Failed to update status');
+            }
         } catch (error) {
-            toast.show('Failed to update status', 'error');
+            toast.show(error.message || 'Failed to update status', 'error');
             loadTickets(); // Revert on failure
         }
     }
@@ -853,6 +978,7 @@ async function drop(e) {
 async function openTeamsModal() {
     document.getElementById('teamsModal').classList.add('active');
     await loadTeams();
+    await loadGitHubInstallations();
     await loadGitHubRepositories();
 
     if (currentTeamId) {
@@ -896,7 +1022,8 @@ async function loadTeams() {
             
             // If no team selected but teams exist, select the first one
             if (!currentTeamId && myTeams.length > 0) {
-                selectTeam(myTeams[0].id);
+                const preferredTeam = myTeams.find(team => team.isOwner || team.currentUserRole === 'OWNER') || myTeams[0];
+                await selectTeam(preferredTeam.id);
             }
         }
     } catch (error) {
@@ -913,23 +1040,51 @@ function renderTeamsList() {
         return;
     }
 
-    list.innerHTML = myTeams.map(team => `
-        <div class="team-item ${currentTeamId == team.id ? 'active' : ''}" onclick="selectTeam(${team.id})">
-            <div>
-                <strong>${team.name}</strong>
+    const ownedTeams = myTeams.filter(team => team.isOwner || team.currentUserRole === 'OWNER');
+    const joinedTeams = myTeams.filter(team => !team.isOwner && team.currentUserRole !== 'OWNER');
+
+    const renderTeamCards = (teams, emptyLabel) => {
+        if (teams.length === 0) {
+            return `<p class="text-muted">${emptyLabel}</p>`;
+        }
+
+        return teams.map(team => `
+            <div class="team-item ${currentTeamId == team.id ? 'active' : ''}" onclick="selectTeam(${team.id})">
+                <div class="team-item-main">
+                    <strong>${team.name}</strong>
                     <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
-                    ${team.sourceType === 'GITHUB' && team.githubRepository
-                        ? `GitHub: ${team.githubRepository.fullName} | ${team.lastGithubSyncAt ? `Synced ${formatDateTime(team.lastGithubSyncAt)}` : 'Sync pending'}`
-                        : 'Manual Team'}
+                        ${team.sourceType === 'GITHUB' && team.githubRepository
+                            ? `GitHub: ${team.githubRepository.fullName} | ${team.lastGithubSyncAt ? `Synced ${formatDateTime(team.lastGithubSyncAt)}` : 'Sync pending'}`
+                            : 'Manual Team'}
+                    </div>
+                    <div class="team-stats">
+                        <span><i class="fa-solid fa-users"></i> ${team._count.members} Members</span>
+                        <span><i class="fa-solid fa-ticket"></i> ${team._count.tickets} Tickets</span>
+                    </div>
                 </div>
-                <div class="team-stats">
-                    <span><i class="fa-solid fa-users"></i> ${team._count.members} Members</span>
-                    <span><i class="fa-solid fa-ticket"></i> ${team._count.tickets} Tickets</span>
+                <div class="team-item-meta">
+                    <span class="team-badge ${(team.isOwner || team.currentUserRole === 'OWNER') ? 'owner' : 'member'}">
+                        ${(team.isOwner || team.currentUserRole === 'OWNER') ? 'Owner' : 'Member'}
+                    </span>
+                    <span class="invite-code-pill">${team.inviteCode}</span>
+                    ${(team.isOwner || team.currentUserRole === 'OWNER')
+                        ? `<button class="icon-btn team-delete-btn" title="Delete Team" onclick="promptDeleteTeam(event, ${team.id})"><i class="fa-solid fa-trash"></i></button>`
+                        : ''}
                 </div>
             </div>
-            <span class="invite-code-pill">${team.inviteCode}</span>
+        `).join('');
+    };
+
+    list.innerHTML = `
+        <div class="teams-group">
+            <div class="teams-group-title">Teams You Created</div>
+            ${renderTeamCards(ownedTeams, 'You have not created any teams yet.')}
         </div>
-    `).join('');
+        <div class="teams-group">
+            <div class="teams-group-title">Teams You Joined</div>
+            ${renderTeamCards(joinedTeams, 'You have not joined any other teams yet.')}
+        </div>
+    `;
 }
 
 async function createTeam() {
@@ -1021,6 +1176,63 @@ async function joinTeam() {
     }
 }
 
+function promptDeleteTeam(event, teamId) {
+    if (event?.stopPropagation) {
+        event.stopPropagation();
+    }
+
+    const team = myTeams.find(item => item.id == teamId);
+    if (!team) return;
+
+    teamToDelete = teamId;
+    const message = document.getElementById('deleteTeamMessage');
+    if (message) {
+        message.textContent = `Delete "${team.name}"? This will remove the team and all tickets in it for every member.`;
+    }
+    document.getElementById('deleteTeamModal').classList.add('active');
+}
+
+function closeDeleteTeamModal() {
+    teamToDelete = null;
+    document.getElementById('deleteTeamModal').classList.remove('active');
+}
+
+async function confirmDeleteTeam() {
+    if (!teamToDelete || !authToken) return;
+
+    try {
+        const res = await fetch(`/api/teams/${teamToDelete}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+            if (currentTeamId == teamToDelete) {
+                currentTeamId = null;
+                localStorage.removeItem('currentTeamId');
+                selectedTeamGitHubStatus = null;
+                teamMembers = [];
+            }
+
+            toast.show('Team deleted', 'success');
+            closeDeleteTeamModal();
+            await loadTeams();
+
+            if (currentTeamId) {
+                await selectTeam(currentTeamId);
+            } else {
+                tickets = [];
+                renderBoard();
+            }
+        } else {
+            toast.show(data.error || 'Failed to delete team', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error while deleting team', 'error');
+    }
+}
+
 async function selectTeam(teamId) {
     currentTeamId = teamId;
     localStorage.setItem('currentTeamId', teamId);
@@ -1035,11 +1247,15 @@ async function selectTeam(teamId) {
             const repoLabel = team.sourceType === 'GITHUB' && team.githubRepository
                 ? team.githubRepository.fullName
                 : 'Manual Team';
+            const roleLabel = team.isOwner || team.currentUserRole === 'OWNER' ? 'Owner' : 'Member';
             info.innerHTML = `
                 <div>
                     <strong>${team.name}</strong>
                     <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
                         ${repoLabel}
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 6px;">
+                        Your role: ${roleLabel}
                     </div>
                 </div>
                 <div class="invite-code-pill" title="Team Invite Code">
@@ -1104,9 +1320,10 @@ function renderMembersList() {
             <div class="assignee-avatar">${getMemberAvatarText(m)}</div>
             <div style="flex-grow: 1;">
                 <div style="font-weight: 500;">${getMemberLabel(m)}</div>
-                ${m.login && m.email ? `<div style="font-size: 0.78rem; color: var(--text-muted);">${m.email}</div>` : ''}
+                ${m.email && m.email !== getMemberLabel(m) ? `<div style="font-size: 0.78rem; color: var(--text-muted);">${m.email}</div>` : ''}
             </div>
             <span class="member-role">${m.role}</span>
+            <span class="member-status ${(m.status || 'INACTIVE').toLowerCase()}">${(m.status || 'INACTIVE').replace('_', ' ')}</span>
         </li>
     `).join('');
 }

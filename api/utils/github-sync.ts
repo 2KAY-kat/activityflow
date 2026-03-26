@@ -1,36 +1,67 @@
 import prisma from '../prisma';
 import {
   createInstallationAccessToken,
-  listAppInstallations,
+  getAppInstallation,
   listInstallationRepositories,
   listRepositoryCollaborators,
 } from './github-app';
 
-export async function syncGitHubInstallationsAndRepositories(createdByUserId: number) {
-  const installations = await listAppInstallations();
+type SyncInstallationsOptions = {
+  installationId?: number;
+};
+
+async function upsertInstallationForUser(createdByUserId: number, installationId: number) {
+  const installation = await getAppInstallation(installationId);
+  const existingInstallation = await prisma.gitHubInstallation.findUnique({
+    where: { githubInstallationId: installation.id },
+    select: {
+      id: true,
+      createdByUserId: true,
+    },
+  });
+
+  if (existingInstallation && existingInstallation.createdByUserId !== createdByUserId) {
+    throw new Error('This GitHub App installation is already linked to another ActivityFlow user.');
+  }
+
+  return prisma.gitHubInstallation.upsert({
+    where: { githubInstallationId: installation.id },
+    update: {
+      accountLogin: installation.account?.login || installation.account?.slug || 'unknown',
+      accountType: installation.account?.type || 'Unknown',
+      createdByUserId,
+    },
+    create: {
+      githubInstallationId: installation.id,
+      accountLogin: installation.account?.login || installation.account?.slug || 'unknown',
+      accountType: installation.account?.type || 'Unknown',
+      createdByUserId,
+    },
+  });
+}
+
+export async function syncGitHubInstallationsAndRepositories(createdByUserId: number, options: SyncInstallationsOptions = {}) {
+  const targetInstallationIds = options.installationId
+    ? [options.installationId]
+    : (
+        await prisma.gitHubInstallation.findMany({
+          where: { createdByUserId },
+          select: { githubInstallationId: true },
+          orderBy: [{ updatedAt: 'desc' }],
+        })
+      ).map((installation) => installation.githubInstallationId);
   const syncedRepositories = [];
 
-  for (const installation of installations) {
-    const storedInstallation = await prisma.gitHubInstallation.upsert({
-      where: { githubInstallationId: installation.id },
-      update: {
-        accountLogin: installation.account?.login || installation.account?.slug || 'unknown',
-        accountType: installation.account?.type || 'Unknown',
-        createdByUserId,
-      },
-      create: {
-        githubInstallationId: installation.id,
-        accountLogin: installation.account?.login || installation.account?.slug || 'unknown',
-        accountType: installation.account?.type || 'Unknown',
-        createdByUserId,
-      },
-    });
+  for (const installationId of targetInstallationIds) {
+    const storedInstallation = await upsertInstallationForUser(createdByUserId, installationId);
 
-    const installationTokenResponse = await createInstallationAccessToken(installation.id);
+    const installationTokenResponse = await createInstallationAccessToken(installationId);
     const repositoryResponse = await listInstallationRepositories(installationTokenResponse.token);
     const repositories = Array.isArray(repositoryResponse.repositories) ? repositoryResponse.repositories : [];
+    const activeRepositoryIds = new Set<number>();
 
     for (const repository of repositories) {
+      activeRepositoryIds.add(repository.id);
       const storedRepository = await prisma.gitHubRepository.upsert({
         where: { githubRepoId: repository.id },
         update: {
@@ -60,6 +91,18 @@ export async function syncGitHubInstallationsAndRepositories(createdByUserId: nu
 
       syncedRepositories.push(storedRepository);
     }
+
+    await prisma.gitHubRepository.updateMany({
+      where: {
+        installationId: storedInstallation.id,
+        githubRepoId: {
+          notIn: Array.from(activeRepositoryIds),
+        },
+      },
+      data: {
+        isActive: false,
+      },
+    });
   }
 
   return syncedRepositories;

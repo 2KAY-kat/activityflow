@@ -108,6 +108,26 @@ async function canAccessTicket(userId: number, ticket: { userId: number; teamId:
   return ticket.userId === userId;
 }
 
+async function canUserUpdateTicketStatus(
+  userId: number,
+  ticket: { assigneeId: number | null; assigneeCollaboratorId: number | null }
+) {
+  if (ticket.assigneeId) {
+    return ticket.assigneeId === userId;
+  }
+
+  if (ticket.assigneeCollaboratorId) {
+    const collaborator = await prisma.repoCollaborator.findUnique({
+      where: { id: ticket.assigneeCollaboratorId },
+      select: { linkedUserId: true },
+    });
+
+    return collaborator?.linkedUserId === userId;
+  }
+
+  return true;
+}
+
 async function resolveAssignmentData(
   team: TeamContext,
   assigneeId: number | null | undefined,
@@ -280,6 +300,7 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
       select: {
         id: true,
         title: true,
+        status: true,
         userId: true,
         teamId: true,
         assigneeId: true,
@@ -319,6 +340,20 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
     const assignmentData = shouldUpdateAssignment
       ? await resolveAssignmentData(team, assigneeId, assigneeCollaboratorId)
       : {};
+
+    if (status !== undefined && status !== existingTicket.status) {
+      const effectiveAssignee = {
+        assigneeId: 'assigneeId' in assignmentData ? assignmentData.assigneeId ?? null : existingTicket.assigneeId,
+        assigneeCollaboratorId:
+          'assigneeCollaboratorId' in assignmentData
+            ? assignmentData.assigneeCollaboratorId ?? null
+            : existingTicket.assigneeCollaboratorId,
+      };
+      const canUpdateStatus = await canUserUpdateTicketStatus(req.userId!, effectiveAssignee);
+      if (!canUpdateStatus) {
+        return res.status(403).json({ error: 'Only the assigned user can update this ticket status' });
+      }
+    }
 
     const ticket = await prisma.ticket.update({
       where: { id },

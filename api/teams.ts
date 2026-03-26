@@ -18,6 +18,15 @@ async function requireTeamMembership(userId: number, teamId: number) {
   });
 }
 
+async function requireOwnerMembership(userId: number, teamId: number) {
+  const membership = await requireTeamMembership(userId, teamId);
+  if (!membership || membership.role !== 'OWNER') {
+    return null;
+  }
+
+  return membership;
+}
+
 async function buildGitHubTeamStatus(teamId: number) {
   const team = await prisma.team.findUnique({
     where: { id: teamId },
@@ -240,9 +249,19 @@ router.get(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Resp
           },
         },
       },
+      orderBy: [
+        { role: 'asc' },
+        { teamId: 'asc' },
+      ],
     });
 
-    res.json(memberships.map((membership) => membership.team));
+    res.json(
+      memberships.map((membership) => ({
+        ...membership.team,
+        currentUserRole: membership.role,
+        isOwner: membership.role === 'OWNER',
+      }))
+    );
   } catch (error) {
     console.error('Error fetching teams:', error);
     res.status(500).json({ error: 'Failed to fetch teams' });
@@ -288,9 +307,9 @@ router.post(['/:teamId/github/sync', '/api/teams/:teamId/github/sync'], authenti
   }
 
   try {
-    const membership = await requireTeamMembership(req.userId!, teamId);
-    if (!membership) {
-      return res.status(403).json({ error: 'Not a member of this team' });
+    const ownerMembership = await requireOwnerMembership(req.userId!, teamId);
+    if (!ownerMembership) {
+      return res.status(403).json({ error: 'Only team owners can sync GitHub collaborators' });
     }
 
     const team = await prisma.team.findUnique({
@@ -370,6 +389,23 @@ router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, asy
           linkedUserId: true,
         },
       });
+      const linkedUserIds = collaborators
+        .map((collaborator) => collaborator.linkedUserId)
+        .filter((value): value is number => typeof value === 'number');
+      const linkedMemberships = linkedUserIds.length
+        ? await prisma.teamMember.findMany({
+            where: {
+              teamId,
+              userId: {
+                in: linkedUserIds,
+              },
+            },
+            select: {
+              userId: true,
+            },
+          })
+        : [];
+      const linkedMembershipSet = new Set(linkedMemberships.map((linkedMembership) => linkedMembership.userId));
 
       return res.json(
         collaborators.map((collaborator) => ({
@@ -380,6 +416,11 @@ router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, asy
           role: collaborator.roleName || collaborator.permission || 'COLLABORATOR',
           avatarUrl: collaborator.avatarUrl,
           linkedUserId: collaborator.linkedUserId,
+          status: collaborator.linkedUserId
+            ? linkedMembershipSet.has(collaborator.linkedUserId)
+              ? 'ACTIVE'
+              : 'PENDING'
+            : 'INACTIVE',
           type: 'github',
         }))
       );
@@ -400,12 +441,58 @@ router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, asy
         name: member.user.email,
         email: member.user.email,
         role: member.role,
+        status: 'ACTIVE',
         type: 'manual',
       }))
     );
   } catch (error) {
     console.error('Error fetching members:', error);
     res.status(500).json({ error: 'Failed to fetch members' });
+  }
+});
+
+router.delete(['/:teamId', '/api/teams/:teamId'], authenticate, async (req: AuthRequest, res: Response) => {
+  const teamIdParam = req.params.teamId;
+  const teamId = parseInt(typeof teamIdParam === 'string' ? teamIdParam : teamIdParam[0], 10);
+
+  if (Number.isNaN(teamId)) {
+    return res.status(400).json({ error: 'Invalid team ID' });
+  }
+
+  try {
+    const ownerMembership = await requireOwnerMembership(req.userId!, teamId);
+    if (!ownerMembership) {
+      return res.status(403).json({ error: 'Only team owners can delete teams' });
+    }
+
+    const team = await prisma.team.findUnique({
+      where: { id: teamId },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    await prisma.$transaction([
+      prisma.ticket.deleteMany({
+        where: { teamId },
+      }),
+      prisma.teamMember.deleteMany({
+        where: { teamId },
+      }),
+      prisma.team.delete({
+        where: { id: teamId },
+      }),
+    ]);
+
+    res.json({ message: 'Team deleted', teamId: team.id, teamName: team.name });
+  } catch (error) {
+    console.error('Error deleting team:', error);
+    res.status(500).json({ error: 'Failed to delete team' });
   }
 });
 

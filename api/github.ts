@@ -56,7 +56,19 @@ router.post(['/installations/sync', '/api/github/installations/sync'], authentic
   }
 
   try {
-    const repositories = await syncGitHubInstallationsAndRepositories(req.userId!);
+    const installationIdInput = req.body?.installationId;
+    const installationId =
+      typeof installationIdInput === 'number'
+        ? installationIdInput
+        : typeof installationIdInput === 'string' && installationIdInput.length > 0
+          ? parseInt(installationIdInput, 10)
+          : undefined;
+
+    if (installationIdInput !== undefined && Number.isNaN(installationId)) {
+      return res.status(400).json({ error: 'Invalid installation ID' });
+    }
+
+    const repositories = await syncGitHubInstallationsAndRepositories(req.userId!, { installationId });
     const installations = await prisma.gitHubInstallation.findMany({
       where: { createdByUserId: req.userId! },
       select: { id: true, accountLogin: true, accountType: true },
@@ -97,6 +109,7 @@ router.get(['/repositories', '/api/github/repositories'], authenticate, async (r
     const repositories = await prisma.gitHubRepository.findMany({
       where: {
         ...(installationId ? { installationId } : {}),
+        isActive: true,
         installation: {
           createdByUserId: req.userId!,
         },

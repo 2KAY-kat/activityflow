@@ -21,6 +21,7 @@
             <div class="header-controls">
                 <button id="headerNewTicket" class="btn btn-primary" onclick="openTicketModal()" style="display: none;"><i class="fa-solid fa-plus"></i> <span>New Ticket</span></button>
                 <button id="headerLogin" class="btn btn-primary" onclick="document.getElementById('authModal').classList.add('active')" style="display: none;"><i class="fa-solid fa-right-to-bracket"></i> <span>Sign In</span></button>
+                <div id="currentUserBadge" class="user-badge" style="display: none;"></div>
                 <div class="user-profile">
                     <button class="icon-btn" onclick="openTeamsModal()" title="Teams"><i class="fa-solid fa-users"></i></button>
                     <button class="icon-btn" onclick="toggleTheme()" title="Toggle Theme"><i class="fa-solid fa-moon" id="themeIcon"></i></button>
@@ -213,8 +214,8 @@
                             <select id="githubRepositorySelect" class="form-control">
                                 <option value="">Select a synced repository</option>
                             </select>
-                            <button type="button" class="btn btn-ghost btn-block" onclick="installGitHubApp()" style="margin-top: 10px;">Install GitHub App</button>
-                            <button type="button" class="btn btn-ghost btn-block" onclick="syncGitHubRepositories()" style="margin-top: 10px;">Sync GitHub Repositories</button>
+                            <button type="button" id="installGitHubAppBtn" class="btn btn-ghost btn-block" onclick="installGitHubApp()" style="margin-top: 10px;">Install GitHub App</button>
+                            <button type="button" id="syncGitHubReposBtn" class="btn btn-ghost btn-block" onclick="syncGitHubRepositories()" style="margin-top: 10px;">Sync GitHub Repositories</button>
                             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">
                                 Choose from repositories already synced into ActivityFlow.
                             </div>
@@ -272,6 +273,20 @@
             <div class="modal-footer center-buttons">
                 <button class="btn btn-ghost" onclick="closeDeleteModal()">Cancel</button>
                 <button class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="deleteTeamModal" class="modal-overlay">
+        <div class="modal delete-modal">
+            <div class="modal-icon-container">
+                <div class="modal-icon danger-icon"><i class="fa-solid fa-trash"></i></div>
+            </div>
+            <h3 class="modal-title-center">Delete Team?</h3>
+            <p id="deleteTeamMessage" class="modal-desc-center">This will remove the team and its tickets for everyone in it.</p>
+            <div class="modal-footer center-buttons">
+                <button class="btn btn-ghost" onclick="closeDeleteTeamModal()">Cancel</button>
+                <button class="btn btn-danger" onclick="confirmDeleteTeam()">Delete Team</button>
             </div>
         </div>
     </div>

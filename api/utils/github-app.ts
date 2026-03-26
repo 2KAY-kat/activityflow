@@ -180,6 +180,11 @@ export async function listAppInstallations() {
   return githubRequestAllPages('/app/installations', appJwt);
 }
 
+export async function getAppInstallation(installationId: number) {
+  const appJwt = createGitHubAppJwt();
+  return githubRequest(`/app/installations/${installationId}`, { token: appJwt });
+}
+
 export async function createInstallationAccessToken(installationId: number) {
   const appJwt = createGitHubAppJwt();
   return githubRequest(`/app/installations/${installationId}/access_tokens`, {
