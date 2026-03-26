@@ -87,25 +87,49 @@ async function checkSystemHealth() {
     const headerStatus = document.getElementById('systemStatus');
     const footerStatus = document.getElementById('footerHealth');
     
-    const updateUI = (isOnline) => {
+    const updateUI = (health) => {
         if (!footerStatus) return;
         const text = footerStatus.querySelector('.status-text');
-        if (isOnline) {
+        const legacyDatabaseStatus = typeof health?.database === 'string' ? health.database : null;
+        const databaseStatus = health?.database?.status || legacyDatabaseStatus || 'disconnected';
+        const hasGitHubPayload = Boolean(health && typeof health.github === 'object');
+        const githubEnabled = hasGitHubPayload ? Boolean(health?.github?.enabled) : false;
+        const githubStatus = hasGitHubPayload ? (health?.github?.status || 'error') : 'not_configured';
+        const computedStatus = databaseStatus !== 'connected'
+            ? 'error'
+            : (!githubEnabled || githubStatus !== 'connected')
+                ? 'degraded'
+                : 'ok';
+        const status = health?.status === 'error' ? 'error' : computedStatus;
+        const githubLabel = !hasGitHubPayload
+            ? 'GitHub health check unavailable on the current server build'
+            : !githubEnabled
+                ? 'GitHub not configured'
+            : githubStatus === 'connected'
+                ? 'GitHub connected'
+                : health?.github?.message || 'GitHub connection issue';
+
+        if (status === 'ok') {
             footerStatus.className = 'status-indicator online';
             if (text) text.textContent = 'System OK';
-            footerStatus.title = 'System Status: Connected to Database';
+            footerStatus.title = `System Status: Database connected | ${githubLabel}`;
+        } else if (status === 'degraded') {
+            footerStatus.className = 'status-indicator degraded';
+            if (text) text.textContent = 'System Degraded';
+            footerStatus.title = `System Status: Database ${databaseStatus} | ${githubLabel}`;
         } else {
             footerStatus.className = 'status-indicator offline';
             if (text) text.textContent = 'System Offline';
-            footerStatus.title = 'System Status: Database Connection Error';
+            footerStatus.title = `System Status: ${health?.database?.message || 'Database connection error'}`;
         }
     };
 
     try {
         const res = await fetch('/api/health');
-        updateUI(res.ok);
+        const data = await res.json().catch(() => null);
+        updateUI(data);
     } catch (error) {
-        updateUI(false);
+        updateUI(null);
     }
 }
 

@@ -9,6 +9,7 @@ type GitHubRequestOptions = {
   token?: string;
   body?: unknown;
   accept?: string;
+  signal?: AbortSignal;
 };
 
 function getRequiredEnv(name: string) {
@@ -32,6 +33,15 @@ export function getGitHubAppConfig() {
     privateKey: getAppPrivateKey(),
     appSlug: process.env.GITHUB_APP_SLUG || '',
   };
+}
+
+export function isGitHubAppConfigured() {
+  try {
+    getGitHubAppConfig();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function getGitHubAppInstallUrl() {
@@ -88,6 +98,7 @@ async function parseGitHubResponse(response: Response) {
 export async function githubRequest(path: string, options: GitHubRequestOptions = {}) {
   const response = await fetch(`${GITHUB_API_URL}${path}`, {
     method: options.method || 'GET',
+    signal: options.signal,
     headers: {
       Accept: options.accept || 'application/vnd.github+json',
       Authorization: options.token ? `Bearer ${options.token}` : '',
@@ -98,6 +109,54 @@ export async function githubRequest(path: string, options: GitHubRequestOptions 
   });
 
   return parseGitHubResponse(response);
+}
+
+function getGitHubHealthErrorMessage(error: any) {
+  if (error?.name === 'AbortError') {
+    return 'GitHub health check timed out';
+  }
+
+  if (typeof error?.message === 'string' && error.message.trim()) {
+    return error.message;
+  }
+
+  return 'GitHub health check failed';
+}
+
+export async function checkGitHubAppHealth(timeoutMs = 4000) {
+  if (!isGitHubAppConfigured()) {
+    return {
+      enabled: false,
+      status: 'not_configured' as const,
+      message: 'GitHub App is not configured',
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const appJwt = createGitHubAppJwt();
+    const app = await githubRequest('/app', {
+      token: appJwt,
+      signal: controller.signal,
+    });
+
+    return {
+      enabled: true,
+      status: 'connected' as const,
+      appSlug: typeof app?.slug === 'string' ? app.slug : null,
+      appName: typeof app?.name === 'string' ? app.name : null,
+    };
+  } catch (error: any) {
+    return {
+      enabled: true,
+      status: 'error' as const,
+      message: getGitHubHealthErrorMessage(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function githubRequestAllPages(path: string, token: string) {
