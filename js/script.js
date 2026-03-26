@@ -109,6 +109,8 @@ function checkAuth() {
     const logoutBtn = document.getElementById('logoutBtn');
     const headerNewTicket = document.getElementById('headerNewTicket');
     const headerLogin = document.getElementById('headerLogin');
+    const teamsBtn = document.querySelector('button[onclick="openTeamsModal()"]');
+    const syncBtn = document.querySelector('button[onclick="syncData()"]');
     
     if (authToken) {
         authModal.classList.remove('active');
@@ -117,6 +119,8 @@ function checkAuth() {
         if (logoutBtn) logoutBtn.style.display = 'flex';
         if (headerNewTicket) headerNewTicket.style.display = 'flex';
         if (headerLogin) headerLogin.style.display = 'none';
+        if (teamsBtn) teamsBtn.style.display = 'flex';
+        if (syncBtn) syncBtn.style.display = 'flex';
         if (currentTeamId) {
             loadTickets();
         } else {
@@ -128,6 +132,8 @@ function checkAuth() {
         if (logoutBtn) logoutBtn.style.display = 'none';
         if (headerNewTicket) headerNewTicket.style.display = 'none';
         if (headerLogin) headerLogin.style.display = 'flex';
+        if (teamsBtn) teamsBtn.style.display = 'none';
+        if (syncBtn) syncBtn.style.display = 'none';
         tickets = [];
         renderBoard();
     }
@@ -507,8 +513,9 @@ function renderTeamsList() {
         <div class="team-item ${currentTeamId == team.id ? 'active' : ''}" onclick="selectTeam(${team.id})">
             <div>
                 <strong>${team.name}</strong>
-                <div style="font-size: 0.8em; color: var(--text-secondary)">
-                    ${team._count.members} members • ${team._count.tickets} tickets
+                <div class="team-stats">
+                    <span><i class="fa-solid fa-users"></i> ${team._count.members} Members</span>
+                    <span><i class="fa-solid fa-ticket"></i> ${team._count.tickets} Tickets</span>
                 </div>
             </div>
             <span class="invite-code-pill">${team.inviteCode}</span>
@@ -584,8 +591,15 @@ async function selectTeam(teamId) {
         const info = document.getElementById('activeTeamInfo');
         if (info) {
             info.innerHTML = `
-                <strong>${team.name}</strong>
-                <div style="font-size: 0.8em; margin-top: 5px;">Invite Code: <span class="invite-code-pill">${team.inviteCode}</span></div>
+                <div>
+                    <strong>${team.name}</strong>
+                    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
+                        Active Workspace
+                    </div>
+                </div>
+                <div class="invite-code-pill" title="Team Invite Code">
+                    <i class="fa-solid fa-hashtag"></i> ${team.inviteCode}
+                </div>
             `;
         }
         const display = document.getElementById('currentTeamDisplay');
@@ -624,9 +638,9 @@ function renderMembersList() {
         <li class="member-item">
             <div class="assignee-avatar">${m.email.substring(0,2).toUpperCase()}</div>
             <div style="flex-grow: 1;">
-                <div>${m.email}</div>
-                <span class="member-role">${m.role}</span>
+                <div style="font-weight: 500;">${m.email}</div>
             </div>
+            <span class="member-role">${m.role}</span>
         </li>
     `).join('');
 }
