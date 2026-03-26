@@ -6,6 +6,7 @@ import { ticketSchema, ticketUpdateSchema } from './validation';
 import { AuthRequest, authenticate } from './middleware/auth';
 import { isRepoCollaborator, isTeamAssignee, isTeamMember } from './utils/team-access';
 import { buildTicketKey } from './utils/ticket-key';
+import { sendTicketAssignmentNotification } from './utils/assignment-notifications';
 
 const app = express();
 app.use(express.json());
@@ -241,10 +242,16 @@ router.post(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: R
       },
     });
 
-    if (assignmentData.assigneeId && ticket.assignee) {
-      const { sendAssignmentEmail } = require('./utils/email');
-      const creator = await prisma.user.findUnique({ where: { id: req.userId! } });
-      sendAssignmentEmail(ticket.assignee.email, title, creator?.email || 'A Team Member').catch(console.error);
+    if ((assignmentData.assigneeId || assignmentData.assigneeCollaboratorId) && ticket.teamId) {
+      sendTicketAssignmentNotification({
+        actorUserId: req.userId!,
+        teamId: ticket.teamId,
+        ticketId: ticket.id,
+        ticketTitle: title,
+        ticketKey: ticket.ticketKey,
+        assigneeId: assignmentData.assigneeId,
+        assigneeCollaboratorId: assignmentData.assigneeCollaboratorId,
+      }).catch(console.error);
     }
 
     res.status(201).json(ticket);
@@ -338,10 +345,21 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
       },
     });
 
-    if ('assigneeId' in assignmentData && assignmentData.assigneeId && assignmentData.assigneeId !== existingTicket.assigneeId && ticket.assignee) {
-      const { sendAssignmentEmail } = require('./utils/email');
-      const updater = await prisma.user.findUnique({ where: { id: req.userId! } });
-      sendAssignmentEmail(ticket.assignee.email, title || existingTicket.title, updater?.email || 'A Team Member').catch(console.error);
+    const assigneeChanged =
+      ('assigneeId' in assignmentData && assignmentData.assigneeId !== existingTicket.assigneeId) ||
+      ('assigneeCollaboratorId' in assignmentData &&
+        assignmentData.assigneeCollaboratorId !== existingTicket.assigneeCollaboratorId);
+
+    if (assigneeChanged && ticket.teamId && (ticket.assigneeId || ticket.assigneeCollaboratorId)) {
+      sendTicketAssignmentNotification({
+        actorUserId: req.userId!,
+        teamId: ticket.teamId,
+        ticketId: ticket.id,
+        ticketTitle: title || existingTicket.title,
+        ticketKey: ticket.ticketKey,
+        assigneeId: ticket.assigneeId,
+        assigneeCollaboratorId: ticket.assigneeCollaboratorId,
+      }).catch(console.error);
     }
 
     res.json(ticket);

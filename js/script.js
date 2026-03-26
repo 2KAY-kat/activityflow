@@ -13,6 +13,9 @@ let teamMembers = [];
 let githubRepositories = [];
 let pendingGitHubInstall = null;
 let selectedTeamGitHubStatus = null;
+let pendingInviteContext = null;
+let pendingInvitePromptShown = false;
+let pendingTicketFocusId = null;
 
 // Expose functions to window
 window.openTeamsModal = openTeamsModal;
@@ -46,6 +49,7 @@ window.drop = drop;
 
 document.addEventListener('DOMContentLoaded', () => {
     hydrateAuthFromHash();
+    hydrateInviteContextFromUrl();
     initializeTheme();
     checkAuth();
     checkSystemHealth();
@@ -125,6 +129,48 @@ function hydrateAuthFromHash() {
     window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
 }
 
+function setPendingInviteContext(context) {
+    pendingInviteContext = context;
+
+    if (context) {
+        sessionStorage.setItem('pendingInviteContext', JSON.stringify(context));
+    } else {
+        sessionStorage.removeItem('pendingInviteContext');
+    }
+}
+
+function clearPendingInviteContext() {
+    setPendingInviteContext(null);
+    pendingInvitePromptShown = false;
+}
+
+function hydrateInviteContextFromUrl() {
+    const storedContext = sessionStorage.getItem('pendingInviteContext');
+    if (storedContext) {
+        try {
+            pendingInviteContext = JSON.parse(storedContext);
+        } catch (error) {
+            sessionStorage.removeItem('pendingInviteContext');
+        }
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const inviteCode = params.get('inviteCode');
+    const teamId = params.get('teamId');
+    const ticketId = params.get('ticketId');
+
+    if (!inviteCode && !teamId && !ticketId) return;
+
+    setPendingInviteContext({
+        inviteCode: inviteCode ? inviteCode.toUpperCase() : null,
+        teamId: teamId ? parseInt(teamId, 10) : null,
+        ticketId: ticketId ? parseInt(ticketId, 10) : null
+    });
+
+    const nextUrl = `${window.location.pathname}${window.location.hash || ''}`;
+    window.history.replaceState({}, document.title, nextUrl);
+}
+
 function toggleTheme() {
     const currentTheme = document.documentElement.getAttribute('data-theme');
     const newTheme = currentTheme === 'light' ? 'dark' : 'light';
@@ -134,7 +180,8 @@ function toggleTheme() {
 }
 
 function startGitHubLogin() {
-    window.location.href = `/api/auth/github/start?returnTo=${encodeURIComponent(window.location.pathname)}`;
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    window.location.href = `/api/auth/github/start?returnTo=${encodeURIComponent(returnTo)}`;
 }
 
 function updateThemeIcon(theme) {
@@ -181,7 +228,12 @@ function checkAuth() {
         if (teamsBtn) teamsBtn.style.display = 'none';
         if (syncBtn) syncBtn.style.display = 'none';
         tickets = [];
+        teamMembers = [];
         renderBoard();
+
+        if (pendingInviteContext) {
+            authModal.classList.add('active');
+        }
     }
 }
 
@@ -198,6 +250,41 @@ async function handlePendingGitHubInstall() {
 
     toast.show(`GitHub App ${installState.setupAction === 'update' ? 'updated' : 'installed'}. Syncing repositories...`, 'success');
     await syncGitHubRepositories();
+}
+
+async function handlePendingInviteContext() {
+    if (!authToken || !pendingInviteContext) return;
+
+    const targetTeam = pendingInviteContext.teamId
+        ? myTeams.find(team => team.id == pendingInviteContext.teamId)
+        : null;
+
+    if (targetTeam) {
+        pendingTicketFocusId = pendingInviteContext.ticketId || null;
+        const targetTeamId = targetTeam.id;
+        clearPendingInviteContext();
+
+        if (currentTeamId != targetTeamId) {
+            await selectTeam(targetTeamId);
+        } else {
+            await loadTickets();
+        }
+
+        toast.show('Assignment ready on your board.', 'success');
+        return;
+    }
+
+    const inviteCodeInput = document.getElementById('inviteCodeInput');
+    if (inviteCodeInput && pendingInviteContext.inviteCode) {
+        inviteCodeInput.value = pendingInviteContext.inviteCode;
+    }
+
+    if (!pendingInvitePromptShown) {
+        document.getElementById('teamsModal').classList.add('active');
+        switchTeamTab('joinCreate');
+        toast.show('Confirm team contribution to unlock your assignment.', 'success');
+        pendingInvitePromptShown = true;
+    }
 }
 
 function toggleAuthMode() {
@@ -546,6 +633,10 @@ function renderBoard() {
         
         const card = document.createElement('div');
         card.className = 'ticket-card';
+        if (pendingTicketFocusId && String(ticket.id) === String(pendingTicketFocusId)) {
+            card.classList.add('ticket-card-focus');
+        }
+        card.dataset.ticketId = ticket.id;
         card.draggable = true;
         card.ondragstart = (e) => dragStart(e, ticket.id);
         
@@ -576,6 +667,15 @@ function renderBoard() {
     document.getElementById('count-todo').textContent = counts['To Do'];
     document.getElementById('count-inprogress').textContent = counts['In Progress'];
     document.getElementById('count-done').textContent = counts['Done'];
+
+    if (pendingTicketFocusId) {
+        const focusedCard = document.querySelector(`.ticket-card[data-ticket-id="${pendingTicketFocusId}"]`);
+        if (focusedCard) {
+            focusedCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => focusedCard.classList.remove('ticket-card-focus'), 3500);
+            pendingTicketFocusId = null;
+        }
+    }
 }
 
 // Modal Handlers
@@ -792,6 +892,7 @@ async function loadTeams() {
             }
             renderTeamsList();
             renderTeamGitHubStatus();
+            await handlePendingInviteContext();
             
             // If no team selected but teams exist, select the first one
             if (!currentTeamId && myTeams.length > 0) {
@@ -897,14 +998,22 @@ async function joinTeam() {
             },
             body: JSON.stringify({ inviteCode })
         });
+        const data = await res.json().catch(() => ({}));
         
         if (res.ok) {
             toast.show('Joined team!', 'success');
             codeInput.value = '';
             await loadTeams();
+            if (data.team?.id) {
+                if (pendingInviteContext?.teamId && Number(data.team.id) === Number(pendingInviteContext.teamId)) {
+                    pendingTicketFocusId = pendingInviteContext.ticketId || null;
+                    clearPendingInviteContext();
+                }
+                await selectTeam(data.team.id);
+            }
+            closeModal('teamsModal');
             switchTeamTab('myTeams');
         } else {
-            const data = await res.json();
             toast.show(data.error || 'Invalid invite code', 'error');
         }
     } catch (error) {

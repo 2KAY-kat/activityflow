@@ -611,8 +611,26 @@ h1, h2, h3, h4, h5, h6 {
     border-color: var(--blue-500);
 }
 
+.ticket-card-focus {
+    border-color: var(--blue-500);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25), var(--shadow-md);
+    animation: ticket-focus-pulse 1.2s ease-in-out 2;
+}
+
 .ticket-card:active {
     cursor: grabbing;
+}
+
+@keyframes ticket-focus-pulse {
+    0% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-2px);
+    }
+    100% {
+        transform: translateY(0);
+    }
 }
 
 .ticket-header {

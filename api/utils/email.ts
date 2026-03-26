@@ -1,45 +1,179 @@
 import nodemailer from 'nodemailer';
+import { getAppBaseUrl } from './github-app';
 
-// Configure transporter with Google SMTP
-// Note: User needs to provide GMAIL_USER and GMAIL_APP_PASSWORD in .env
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD
-    }
-});
+type AssignmentEmailInput = {
+  toEmail: string;
+  ticketTitle: string;
+  ticketKey?: string | null;
+  assignedByName: string;
+  teamName: string;
+  actionUrl: string;
+  inviteCode?: string;
+  requiresJoinConfirmation?: boolean;
+};
 
-export async function sendAssignmentEmail(toEmail: string, ticketTitle: string, assignedByName: string) {
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-        console.warn('Email service not configured. Skipping notification.');
-        return;
-    }
+type AssignmentUrlInput = {
+  teamId?: number | null;
+  ticketId?: number | null;
+  inviteCode?: string | null;
+};
 
-    const mailOptions = {
-        from: `"ActivityFlow" <${process.env.GMAIL_USER}>`,
-        to: toEmail,
-        subject: `New Assignment: ${ticketTitle}`,
-        text: `You have been assigned a new task: "${ticketTitle}" by ${assignedByName}.\n\nView it on your board: ${process.env.APP_URL || 'http://localhost:3000'}`,
-        html: `
-            <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                <h2 style="color: #2563eb;">New Task Assigned</h2>
-                <p>Hello,</p>
-                <p>You have been assigned a new task: <strong>"${ticketTitle}"</strong> by <strong>${assignedByName}</strong>.</p>
-                <div style="margin: 20px 0;">
-                    <a href="${process.env.APP_URL || 'http://localhost:3000'}" style="background: #2563eb; color: white; padding: 10px 20px; border-radius: 5px; text-decoration: none;">View Dashboard</a>
-                </div>
-                <p style="color: #666; font-size: 0.9em;">Good luck with your task!</p>
-            </div>
-        `
+function getMailConfig() {
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPassword = process.env.SMTP_PASSWORD;
+
+  if (smtpHost && smtpUser && smtpPassword) {
+    return {
+      transport: {
+        host: smtpHost,
+        port: Number(process.env.SMTP_PORT || 587),
+        secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+        auth: {
+          user: smtpUser,
+          pass: smtpPassword,
+        },
+      },
+      from: process.env.MAIL_FROM || smtpUser,
     };
+  }
 
-    try {
-        const info = await transporter.sendMail(mailOptions);
-        console.log('Email sent: %s', info.messageId);
-        return info;
-    } catch (error) {
-        console.error('Error sending assignment email:', error);
-        throw error;
-    }
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    return {
+      transport: {
+        service: 'gmail',
+        auth: {
+          user: process.env.GMAIL_USER,
+          pass: process.env.GMAIL_APP_PASSWORD,
+        },
+      },
+      from: process.env.MAIL_FROM || process.env.GMAIL_USER,
+    };
+  }
+
+  return null;
+}
+
+function getTransporter() {
+  const config = getMailConfig();
+  if (!config) {
+    return null;
+  }
+
+  return nodemailer.createTransport(config.transport);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function buildAssignmentUrl({ teamId, ticketId, inviteCode }: AssignmentUrlInput) {
+  const url = new URL('/', `${getAppBaseUrl().replace(/\/$/, '')}/`);
+
+  if (teamId) {
+    url.searchParams.set('teamId', String(teamId));
+  }
+
+  if (ticketId) {
+    url.searchParams.set('ticketId', String(ticketId));
+  }
+
+  if (inviteCode) {
+    url.searchParams.set('inviteCode', inviteCode);
+  }
+
+  return url.toString();
+}
+
+export async function sendAssignmentEmail({
+  toEmail,
+  ticketTitle,
+  ticketKey,
+  assignedByName,
+  teamName,
+  actionUrl,
+  inviteCode,
+  requiresJoinConfirmation = false,
+}: AssignmentEmailInput) {
+  const config = getMailConfig();
+  const transporter = getTransporter();
+
+  if (!config || !transporter) {
+    console.warn('Email service not configured. Set SMTP_* or GMAIL_* variables to enable notifications.');
+    return;
+  }
+
+  if (!toEmail) {
+    console.warn('Assignment notification skipped because no recipient email was available.');
+    return;
+  }
+
+  const safeTitle = escapeHtml(ticketTitle);
+  const safeAssigner = escapeHtml(assignedByName);
+  const safeTeamName = escapeHtml(teamName);
+  const safeInviteCode = inviteCode ? escapeHtml(inviteCode) : null;
+  const label = ticketKey ? `${ticketKey} - ${ticketTitle}` : ticketTitle;
+  const subject = `New Assignment: ${label}`;
+  const preface = requiresJoinConfirmation
+    ? `You have been assigned work in ${teamName}. Confirm team access first to view the assignment.`
+    : `You have been assigned work in ${teamName}.`;
+  const inviteLine = safeInviteCode
+    ? `Use invite code ${inviteCode} if you are prompted to join the team.`
+    : '';
+  const ctaLabel = requiresJoinConfirmation ? 'Confirm Contribution' : 'View Assignment';
+
+  const mailOptions = {
+    from: `"ActivityFlow" <${config.from}>`,
+    to: toEmail,
+    subject,
+    text: [
+      `${preface}`,
+      '',
+      `Task: "${ticketTitle}"${ticketKey ? ` (${ticketKey})` : ''}`,
+      `Assigned by: ${assignedByName}`,
+      `Team: ${teamName}`,
+      inviteLine,
+      '',
+      `${requiresJoinConfirmation ? 'Confirm access and open the assignment' : 'Open the assignment'}: ${actionUrl}`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    html: `
+      <div style="font-family: sans-serif; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; max-width: 560px;">
+        <div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #2563eb; font-weight: 700;">ActivityFlow Assignment</div>
+        <h2 style="margin: 12px 0 8px; color: #111827;">${safeTitle}</h2>
+        ${ticketKey ? `<div style="margin-bottom: 12px; color: #6b7280; font-size: 14px;">Ticket key: <strong>${escapeHtml(ticketKey)}</strong></div>` : ''}
+        <p style="color: #374151; line-height: 1.6; margin: 0 0 12px;">
+          <strong>${safeAssigner}</strong> assigned this work in <strong>${safeTeamName}</strong>.
+        </p>
+        <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">
+          ${requiresJoinConfirmation
+            ? 'You will be asked to confirm team participation before the assignment is shown.'
+            : 'Open ActivityFlow to view the assignment immediately.'}
+        </p>
+        ${safeInviteCode ? `<div style="margin: 0 0 16px; padding: 12px; background: #f3f4f6; border-radius: 8px; color: #111827;">Invite code: <strong>${safeInviteCode}</strong></div>` : ''}
+        <div style="margin: 20px 0;">
+          <a href="${actionUrl}" style="background: #2563eb; color: white; padding: 12px 18px; border-radius: 8px; text-decoration: none; display: inline-block;">${ctaLabel}</a>
+        </div>
+        <p style="color: #6b7280; font-size: 13px; line-height: 1.5; margin: 16px 0 0;">
+          If the button does not work, open this link manually:<br>
+          <a href="${actionUrl}" style="color: #2563eb;">${actionUrl}</a>
+        </p>
+      </div>
+    `,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Assignment email sent:', info.messageId);
+    return info;
+  } catch (error) {
+    console.error('Error sending assignment email:', error);
+    throw error;
+  }
 }
