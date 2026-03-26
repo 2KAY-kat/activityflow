@@ -7,6 +7,82 @@ import { syncGitHubCollaborators } from './utils/github-sync';
 
 const router = express.Router();
 
+async function requireTeamMembership(userId: number, teamId: number) {
+  return prisma.teamMember.findUnique({
+    where: {
+      userId_teamId: {
+        userId,
+        teamId,
+      },
+    },
+  });
+}
+
+async function buildGitHubTeamStatus(teamId: number) {
+  const team = await prisma.team.findUnique({
+    where: { id: teamId },
+    select: {
+      id: true,
+      name: true,
+      sourceType: true,
+      githubRepoId: true,
+      lastGithubSyncAt: true,
+      githubRepository: {
+        select: {
+          id: true,
+          fullName: true,
+          defaultBranch: true,
+          htmlUrl: true,
+          lastSyncedAt: true,
+        },
+      },
+    },
+  });
+
+  if (!team) {
+    return null;
+  }
+
+  if (team.sourceType !== 'GITHUB' || !team.githubRepoId || !team.githubRepository) {
+    return {
+      id: team.id,
+      name: team.name,
+      sourceType: team.sourceType,
+    };
+  }
+
+  const [collaboratorCount, linkedCollaboratorCount] = await prisma.$transaction([
+    prisma.repoCollaborator.count({
+      where: {
+        repositoryId: team.githubRepoId,
+        isActive: true,
+      },
+    }),
+    prisma.repoCollaborator.count({
+      where: {
+        repositoryId: team.githubRepoId,
+        isActive: true,
+        linkedUserId: {
+          not: null,
+        },
+      },
+    }),
+  ]);
+
+  return {
+    id: team.id,
+    name: team.name,
+    sourceType: team.sourceType,
+    repositoryId: team.githubRepository.id,
+    repositoryFullName: team.githubRepository.fullName,
+    repositoryUrl: team.githubRepository.htmlUrl,
+    defaultBranch: team.githubRepository.defaultBranch,
+    lastSyncedAt: team.lastGithubSyncAt || team.githubRepository.lastSyncedAt,
+    collaboratorCount,
+    linkedCollaboratorCount,
+  };
+}
+
 router.post(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Response) => {
   const validation = teamSchema.safeParse(req.body);
   if (!validation.success) {
@@ -17,10 +93,20 @@ router.post(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Res
 
   try {
     let githubRepository = null;
+    let githubSync: {
+      collaboratorCount?: number;
+      lastSyncedAt?: Date | null;
+      warning?: string;
+    } | null = null;
 
     if (sourceType === 'GITHUB') {
-      githubRepository = await prisma.gitHubRepository.findUnique({
-        where: { id: githubRepositoryId! },
+      githubRepository = await prisma.gitHubRepository.findFirst({
+        where: {
+          id: githubRepositoryId!,
+          installation: {
+            createdByUserId: req.userId!,
+          },
+        },
         select: {
           id: true,
           fullName: true,
@@ -68,13 +154,21 @@ router.post(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Res
 
     if (sourceType === 'GITHUB' && githubRepository?.id) {
       try {
-        await syncGitHubCollaborators(githubRepository.id);
+        const collaborators = await syncGitHubCollaborators(githubRepository.id);
+        const githubStatus = await buildGitHubTeamStatus(team.id);
+        githubSync = {
+          collaboratorCount: collaborators.length,
+          lastSyncedAt: githubStatus && 'lastSyncedAt' in githubStatus ? githubStatus.lastSyncedAt : null,
+        };
       } catch (syncError) {
         console.error('Initial GitHub collaborator sync failed:', syncError);
+        githubSync = {
+          warning: 'Team created, but GitHub collaborators could not be synced yet.',
+        };
       }
     }
 
-    res.status(201).json(team);
+    res.status(201).json({ team, githubSync });
   } catch (error) {
     console.error('Error creating team:', error);
     res.status(500).json({ error: 'Failed to create team' });
@@ -155,6 +249,81 @@ router.get(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Resp
   }
 });
 
+router.get(['/:teamId/github/status', '/api/teams/:teamId/github/status'], authenticate, async (req: AuthRequest, res: Response) => {
+  const teamIdParam = req.params.teamId;
+  const teamId = parseInt(typeof teamIdParam === 'string' ? teamIdParam : teamIdParam[0], 10);
+
+  if (Number.isNaN(teamId)) {
+    return res.status(400).json({ error: 'Invalid team ID' });
+  }
+
+  try {
+    const membership = await requireTeamMembership(req.userId!, teamId);
+    if (!membership) {
+      return res.status(403).json({ error: 'Not a member of this team' });
+    }
+
+    const githubStatus = await buildGitHubTeamStatus(teamId);
+    if (!githubStatus) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    if (githubStatus.sourceType !== 'GITHUB') {
+      return res.status(400).json({ error: 'This team is not linked to a GitHub repository' });
+    }
+
+    res.json(githubStatus);
+  } catch (error) {
+    console.error('Error fetching GitHub team status:', error);
+    res.status(500).json({ error: 'Failed to fetch GitHub team status' });
+  }
+});
+
+router.post(['/:teamId/github/sync', '/api/teams/:teamId/github/sync'], authenticate, async (req: AuthRequest, res: Response) => {
+  const teamIdParam = req.params.teamId;
+  const teamId = parseInt(typeof teamIdParam === 'string' ? teamIdParam : teamIdParam[0], 10);
+
+  if (Number.isNaN(teamId)) {
+    return res.status(400).json({ error: 'Invalid team ID' });
+  }
+
+  try {
+    const membership = await requireTeamMembership(req.userId!, teamId);
+    if (!membership) {
+      return res.status(403).json({ error: 'Not a member of this team' });
+    }
+
+    const team = await prisma.team.findUnique({
+      where: { id: teamId },
+      select: {
+        id: true,
+        sourceType: true,
+        githubRepoId: true,
+      },
+    });
+
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    if (team.sourceType !== 'GITHUB' || !team.githubRepoId) {
+      return res.status(400).json({ error: 'This team is not linked to a GitHub repository' });
+    }
+
+    const collaborators = await syncGitHubCollaborators(team.githubRepoId);
+    const githubStatus = await buildGitHubTeamStatus(teamId);
+
+    res.json({
+      message: 'GitHub collaborators synced',
+      collaboratorCount: collaborators.length,
+      ...(githubStatus || {}),
+    });
+  } catch (error: any) {
+    console.error('Error syncing GitHub collaborators for team:', error);
+    res.status(500).json({ error: error.message || 'Failed to sync GitHub collaborators' });
+  }
+});
+
 router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, async (req: AuthRequest, res: Response) => {
   const teamIdParam = req.params.teamId;
   const teamId = parseInt(typeof teamIdParam === 'string' ? teamIdParam : teamIdParam[0], 10);
@@ -164,14 +333,7 @@ router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, asy
   }
 
   try {
-    const membership = await prisma.teamMember.findUnique({
-      where: {
-        userId_teamId: {
-          userId: req.userId!,
-          teamId,
-        },
-      },
-    });
+    const membership = await requireTeamMembership(req.userId!, teamId);
 
     if (!membership) {
       return res.status(403).json({ error: 'Not a member of this team' });

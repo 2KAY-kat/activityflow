@@ -12,6 +12,7 @@ let myTeams = [];
 let teamMembers = [];
 let githubRepositories = [];
 let pendingGitHubInstall = null;
+let selectedTeamGitHubStatus = null;
 
 // Expose functions to window
 window.openTeamsModal = openTeamsModal;
@@ -24,6 +25,7 @@ window.toggleTeamSourceFields = toggleTeamSourceFields;
 window.startGitHubLogin = startGitHubLogin;
 window.syncGitHubRepositories = syncGitHubRepositories;
 window.installGitHubApp = installGitHubApp;
+window.syncTeamGitHubCollaborators = syncTeamGitHubCollaborators;
 
 // Expose functions to window for inline HTML onclick/ondrop handlers
 window.toggleTheme = toggleTheme;
@@ -276,6 +278,67 @@ function getMemberAvatarText(member) {
     return label.substring(0, 2).toUpperCase();
 }
 
+function formatDateTime(value) {
+    if (!value) return 'Not synced yet';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Not synced yet';
+
+    return date.toLocaleString();
+}
+
+function renderTeamGitHubStatus() {
+    const container = document.getElementById('teamGitHubStatus');
+    const team = getCurrentTeam();
+
+    if (!container) return;
+
+    if (!team || team.sourceType !== 'GITHUB') {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+
+    const status = selectedTeamGitHubStatus;
+    const repositoryFullName = status?.repositoryFullName || team.githubRepository?.fullName || 'GitHub Repository';
+    const repositoryUrl = status?.repositoryUrl || team.githubRepository?.htmlUrl || '';
+    const defaultBranch = status?.defaultBranch || team.defaultBranch || team.githubRepository?.defaultBranch || 'unknown';
+    const collaboratorCount = typeof status?.collaboratorCount === 'number'
+        ? status.collaboratorCount
+        : teamMembers.filter(member => member.type === 'github').length;
+    const linkedCollaboratorCount = typeof status?.linkedCollaboratorCount === 'number'
+        ? status.linkedCollaboratorCount
+        : teamMembers.filter(member => member.type === 'github' && member.linkedUserId).length;
+    const lastSyncedAt = status?.lastSyncedAt || team.lastGithubSyncAt || team.githubRepository?.lastSyncedAt || null;
+    const repoLabel = repositoryUrl
+        ? `<a href="${repositoryUrl}" target="_blank" rel="noopener noreferrer">${repositoryFullName}</a>`
+        : repositoryFullName;
+    const emptyMessage = collaboratorCount === 0
+        ? '<div style="margin-top: 10px; color: var(--text-muted);">No GitHub collaborators are synced yet. Install the app on the repo and run sync if you need to refresh access.</div>'
+        : '';
+
+    container.style.display = 'block';
+    container.innerHTML = `
+        <div style="border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; background: var(--card-bg);">
+            <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap;">
+                <div>
+                    <div style="font-weight: 600;">${repoLabel}</div>
+                    <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 6px;">
+                        Default branch: ${defaultBranch} | Last sync: ${formatDateTime(lastSyncedAt)}
+                    </div>
+                    <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 6px;">
+                        ${collaboratorCount} collaborator${collaboratorCount === 1 ? '' : 's'} ready | ${linkedCollaboratorCount} linked to ActivityFlow users
+                    </div>
+                </div>
+                <button id="teamGitHubSyncBtn" type="button" class="btn btn-ghost" onclick="syncTeamGitHubCollaborators()">
+                    Sync Collaborators
+                </button>
+            </div>
+            ${emptyMessage}
+        </div>
+    `;
+}
+
 function renderGitHubRepositoryOptions() {
     const select = document.getElementById('githubRepositorySelect');
     if (!select) return;
@@ -308,6 +371,33 @@ async function loadGitHubRepositories() {
     } catch (error) {
         console.error('Failed to load GitHub repositories:', error);
     }
+}
+
+async function loadTeamGitHubStatus(teamId) {
+    const team = myTeams.find(item => item.id == teamId);
+
+    if (!authToken || !team || team.sourceType !== 'GITHUB') {
+        selectedTeamGitHubStatus = null;
+        renderTeamGitHubStatus();
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/teams/${teamId}/github/status`, {
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+
+        if (res.ok) {
+            selectedTeamGitHubStatus = await res.json();
+        } else {
+            selectedTeamGitHubStatus = null;
+        }
+    } catch (error) {
+        console.error('Failed to load GitHub team status:', error);
+        selectedTeamGitHubStatus = null;
+    }
+
+    renderTeamGitHubStatus();
 }
 
 async function syncGitHubRepositories() {
@@ -352,6 +442,37 @@ async function installGitHubApp() {
         }
     } catch (error) {
         toast.show('Network error while opening GitHub install', 'error');
+    }
+}
+
+async function syncTeamGitHubCollaborators() {
+    if (!authToken || !currentTeamId) return;
+
+    const button = document.getElementById('teamGitHubSyncBtn');
+    if (button) {
+        button.disabled = true;
+        button.textContent = 'Syncing...';
+    }
+
+    try {
+        const res = await fetch(`/api/teams/${currentTeamId}/github/sync`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+            selectedTeamGitHubStatus = data;
+            toast.show(`GitHub collaborators synced${typeof data.collaboratorCount === 'number' ? ` (${data.collaboratorCount})` : ''}`, 'success');
+            await loadTeams();
+            await loadTeamMembers(currentTeamId);
+        } else {
+            toast.show(data.error || 'Failed to sync GitHub collaborators', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error while syncing GitHub collaborators', 'error');
+    } finally {
+        renderTeamGitHubStatus();
     }
 }
 
@@ -633,6 +754,10 @@ async function openTeamsModal() {
     document.getElementById('teamsModal').classList.add('active');
     await loadTeams();
     await loadGitHubRepositories();
+
+    if (currentTeamId) {
+        await loadTeamGitHubStatus(currentTeamId);
+    }
 }
 
 function closeModal(modalId) {
@@ -663,8 +788,10 @@ async function loadTeams() {
             if (currentTeamId && !myTeams.some(team => team.id == currentTeamId)) {
                 currentTeamId = null;
                 localStorage.removeItem('currentTeamId');
+                selectedTeamGitHubStatus = null;
             }
             renderTeamsList();
+            renderTeamGitHubStatus();
             
             // If no team selected but teams exist, select the first one
             if (!currentTeamId && myTeams.length > 0) {
@@ -689,8 +816,10 @@ function renderTeamsList() {
         <div class="team-item ${currentTeamId == team.id ? 'active' : ''}" onclick="selectTeam(${team.id})">
             <div>
                 <strong>${team.name}</strong>
-                <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
-                    ${team.sourceType === 'GITHUB' && team.githubRepository ? `GitHub: ${team.githubRepository.fullName}` : 'Manual Team'}
+                    <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
+                    ${team.sourceType === 'GITHUB' && team.githubRepository
+                        ? `GitHub: ${team.githubRepository.fullName} | ${team.lastGithubSyncAt ? `Synced ${formatDateTime(team.lastGithubSyncAt)}` : 'Sync pending'}`
+                        : 'Manual Team'}
                 </div>
                 <div class="team-stats">
                     <span><i class="fa-solid fa-users"></i> ${team._count.members} Members</span>
@@ -723,17 +852,30 @@ async function createTeam() {
             },
             body: JSON.stringify({ name, sourceType, githubRepositoryId })
         });
+        const data = await res.json().catch(() => ({}));
         
         if (res.ok) {
+            const createdTeam = data.team || data;
             toast.show('Team created!', 'success');
+
+            if (sourceType === 'GITHUB') {
+                if (data.githubSync?.warning) {
+                    toast.show(data.githubSync.warning, 'error');
+                } else if (typeof data.githubSync?.collaboratorCount === 'number') {
+                    toast.show(`GitHub collaborators synced (${data.githubSync.collaboratorCount})`, 'success');
+                }
+            }
+
             nameInput.value = '';
             if (sourceTypeInput) sourceTypeInput.value = 'MANUAL';
             if (githubRepositoryInput) githubRepositoryInput.value = '';
             toggleTeamSourceFields();
             await loadTeams();
+            if (createdTeam?.id) {
+                await selectTeam(createdTeam.id);
+            }
             switchTeamTab('myTeams');
         } else {
-            const data = await res.json();
             toast.show(data.error || 'Failed to create team', 'error');
         }
     } catch (error) {
@@ -773,6 +915,8 @@ async function joinTeam() {
 async function selectTeam(teamId) {
     currentTeamId = teamId;
     localStorage.setItem('currentTeamId', teamId);
+    selectedTeamGitHubStatus = null;
+    teamMembers = [];
     
     // Update Active Team Info UI
     const team = myTeams.find(t => t.id == teamId);
@@ -801,7 +945,13 @@ async function selectTeam(teamId) {
     }
 
     renderTeamsList();
+    renderMembersList();
+    updateAssigneeDropdown();
+    renderTeamGitHubStatus();
     loadTeamMembers(teamId);
+    if (team?.sourceType === 'GITHUB') {
+        loadTeamGitHubStatus(teamId);
+    }
     loadTickets();
 }
 
@@ -814,6 +964,7 @@ async function loadTeamMembers(teamId) {
             teamMembers = await res.json();
             renderMembersList();
             updateAssigneeDropdown();
+            renderTeamGitHubStatus();
         }
     } catch (error) {
         console.error('Failed to load members:', error);
@@ -826,6 +977,19 @@ function renderMembersList() {
     if (!list) return;
     
     section.style.display = 'block';
+
+    if (teamMembers.length === 0) {
+        const team = getCurrentTeam();
+        list.innerHTML = `
+            <li class="member-item" style="justify-content: center; color: var(--text-muted);">
+                ${team?.sourceType === 'GITHUB'
+                    ? 'No GitHub collaborators have been synced for this repository yet.'
+                    : 'No team members available yet.'}
+            </li>
+        `;
+        return;
+    }
+
     list.innerHTML = teamMembers.map(m => `
         <li class="member-item">
             <div class="assignee-avatar">${getMemberAvatarText(m)}</div>
