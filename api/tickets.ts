@@ -4,7 +4,8 @@ import cors from 'cors';
 import prisma from './prisma';
 import { ticketSchema, ticketUpdateSchema } from './validation';
 import { AuthRequest, authenticate } from './middleware/auth';
-import { isTeamAssignee, isTeamMember } from './utils/team-access';
+import { isRepoCollaborator, isTeamAssignee, isTeamMember } from './utils/team-access';
+import { buildTicketKey } from './utils/ticket-key';
 
 const app = express();
 app.use(express.json());
@@ -32,12 +33,108 @@ app.use(
 
 const router = express.Router();
 
+type TeamContext = {
+  id: number;
+  sourceType: string;
+  githubRepoId: number | null;
+} | null;
+
+function buildLifecycleFieldsForCreate(status: string) {
+  const now = new Date();
+
+  if (status === 'Done') {
+    return {
+      startedAt: now,
+      completedAt: now,
+    };
+  }
+
+  if (status === 'In Progress') {
+    return {
+      startedAt: now,
+      completedAt: null,
+    };
+  }
+
+  return {};
+}
+
+function buildLifecycleFieldsForUpdate(
+  status: string | undefined,
+  existingTicket: { startedAt: Date | null; completedAt: Date | null }
+) {
+  if (!status) {
+    return {};
+  }
+
+  const now = new Date();
+
+  if (status === 'Done') {
+    return {
+      startedAt: existingTicket.startedAt || now,
+      completedAt: existingTicket.completedAt || now,
+    };
+  }
+
+  if (status === 'In Progress') {
+    return {
+      startedAt: existingTicket.startedAt || now,
+      completedAt: null,
+    };
+  }
+
+  return {
+    completedAt: null,
+  };
+}
+
+async function getTeamContext(teamId: number): Promise<TeamContext> {
+  return prisma.team.findUnique({
+    where: { id: teamId },
+    select: {
+      id: true,
+      sourceType: true,
+      githubRepoId: true,
+    },
+  });
+}
+
 async function canAccessTicket(userId: number, ticket: { userId: number; teamId: number | null }) {
   if (ticket.teamId) {
     return isTeamMember(userId, ticket.teamId);
   }
 
   return ticket.userId === userId;
+}
+
+async function resolveAssignmentData(
+  team: TeamContext,
+  assigneeId: number | null | undefined,
+  assigneeCollaboratorId: number | null | undefined
+) {
+  if (team?.sourceType === 'GITHUB') {
+    if (!team.githubRepoId) {
+      throw new Error('GitHub-backed teams must have a linked repository');
+    }
+
+    if (assigneeCollaboratorId && !(await isRepoCollaborator(team.githubRepoId, assigneeCollaboratorId))) {
+      throw new Error('Assignee collaborator must belong to the selected repository');
+    }
+
+    return {
+      assigneeId: null,
+      assigneeCollaboratorId: assigneeCollaboratorId ?? null,
+    };
+  }
+
+  if (team?.id && assigneeId && !(await isTeamAssignee(team.id, assigneeId))) {
+    throw new Error('Assignee must be a member of the selected team');
+  }
+
+  return {
+    assigneeId: assigneeId ?? null,
+    assigneeCollaboratorId: null,
+  };
 }
 
 router.get(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: Response) => {
@@ -59,6 +156,15 @@ router.get(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: Re
       include: {
         createdBy: { select: { email: true } },
         assignee: { select: { id: true, email: true } },
+        assigneeCollaborator: {
+          select: {
+            id: true,
+            login: true,
+            displayName: true,
+            avatarUrl: true,
+            email: true,
+          },
+        },
       },
     });
 
@@ -76,7 +182,7 @@ router.post(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: R
       return res.status(400).json({ error: 'Validation failed', details: validation.error.format() });
     }
 
-    const { title, description, status, priority, assigneeId, teamId } = validation.data;
+    const { title, description, status, priority, assigneeId, assigneeCollaboratorId, teamId } = validation.data;
 
     if (!teamId) {
       return res.status(400).json({ error: 'Team ID is required' });
@@ -86,26 +192,56 @@ router.post(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: R
       return res.status(403).json({ error: 'Not a member of this team' });
     }
 
-    if (assigneeId && !(await isTeamAssignee(teamId, assigneeId))) {
-      return res.status(400).json({ error: 'Assignee must be a member of the selected team' });
+    const team = await getTeamContext(teamId);
+    if (!team) {
+      return res.status(404).json({ error: 'Selected team was not found' });
     }
 
-    const ticket = await prisma.ticket.create({
+    const assignmentData = await resolveAssignmentData(team, assigneeId, assigneeCollaboratorId);
+
+    const createdTicket = await prisma.ticket.create({
       data: {
         title,
         description,
         status,
         priority,
-        assigneeId,
         teamId,
         userId: req.userId!,
+        ...assignmentData,
+        ...buildLifecycleFieldsForCreate(status),
       },
       include: {
         assignee: { select: { id: true, email: true } },
+        assigneeCollaborator: {
+          select: {
+            id: true,
+            login: true,
+            displayName: true,
+            avatarUrl: true,
+            email: true,
+          },
+        },
       },
     });
 
-    if (assigneeId && ticket.assignee) {
+    const ticket = await prisma.ticket.update({
+      where: { id: createdTicket.id },
+      data: { ticketKey: buildTicketKey(createdTicket.id) },
+      include: {
+        assignee: { select: { id: true, email: true } },
+        assigneeCollaborator: {
+          select: {
+            id: true,
+            login: true,
+            displayName: true,
+            avatarUrl: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (assignmentData.assigneeId && ticket.assignee) {
       const { sendAssignmentEmail } = require('./utils/email');
       const creator = await prisma.user.findUnique({ where: { id: req.userId! } });
       sendAssignmentEmail(ticket.assignee.email, title, creator?.email || 'A Team Member').catch(console.error);
@@ -121,7 +257,7 @@ router.post(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: R
 router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const idParam = req.params.id;
-    const id = parseInt(typeof idParam === 'string' ? idParam : idParam![0], 10);
+    const id = parseInt(typeof idParam === 'string' ? idParam : idParam[0], 10);
 
     if (Number.isNaN(id)) {
       return res.status(400).json({ error: 'Invalid ticket ID' });
@@ -134,7 +270,16 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
 
     const existingTicket = await prisma.ticket.findUnique({
       where: { id },
-      include: { assignee: true },
+      select: {
+        id: true,
+        title: true,
+        userId: true,
+        teamId: true,
+        assigneeId: true,
+        assigneeCollaboratorId: true,
+        startedAt: true,
+        completedAt: true,
+      },
     });
 
     if (!existingTicket) {
@@ -145,29 +290,58 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
       return res.status(403).json({ error: 'You do not have access to this ticket' });
     }
 
-    const { title, description, status, priority, assigneeId, teamId } = validation.data;
+    const { title, description, status, priority, assigneeId, assigneeCollaboratorId, teamId } = validation.data;
+
     const nextTeamId = teamId ?? existingTicket.teamId ?? undefined;
+    let team: TeamContext = null;
 
-    if (teamId && !(await isTeamMember(req.userId!, teamId))) {
-      return res.status(403).json({ error: 'Not a member of the selected team' });
+    if (nextTeamId) {
+      if (!(await isTeamMember(req.userId!, nextTeamId))) {
+        return res.status(403).json({ error: 'Not a member of the selected team' });
+      }
+
+      team = await getTeamContext(nextTeamId);
+      if (!team) {
+        return res.status(404).json({ error: 'Selected team was not found' });
+      }
     }
 
-    if (nextTeamId && assigneeId && !(await isTeamAssignee(nextTeamId, assigneeId))) {
-      return res.status(400).json({ error: 'Assignee must be a member of the selected team' });
-    }
+    const shouldUpdateAssignment =
+      assigneeId !== undefined || assigneeCollaboratorId !== undefined || teamId !== undefined;
+
+    const assignmentData = shouldUpdateAssignment
+      ? await resolveAssignmentData(team, assigneeId, assigneeCollaboratorId)
+      : {};
 
     const ticket = await prisma.ticket.update({
       where: { id },
-      data: { title, description, status, priority, assigneeId, teamId },
+      data: {
+        title,
+        description,
+        status,
+        priority,
+        teamId,
+        ...assignmentData,
+        ...buildLifecycleFieldsForUpdate(status, existingTicket),
+      },
       include: {
         assignee: { select: { id: true, email: true } },
+        assigneeCollaborator: {
+          select: {
+            id: true,
+            login: true,
+            displayName: true,
+            avatarUrl: true,
+            email: true,
+          },
+        },
       },
     });
 
-    if (assigneeId && assigneeId !== existingTicket.assigneeId && ticket.assignee) {
+    if ('assigneeId' in assignmentData && assignmentData.assigneeId && assignmentData.assigneeId !== existingTicket.assigneeId && ticket.assignee) {
       const { sendAssignmentEmail } = require('./utils/email');
       const updater = await prisma.user.findUnique({ where: { id: req.userId! } });
-      sendAssignmentEmail(ticket.assignee.email, title || ticket.title, updater?.email || 'A Team Member').catch(console.error);
+      sendAssignmentEmail(ticket.assignee.email, title || existingTicket.title, updater?.email || 'A Team Member').catch(console.error);
     }
 
     res.json(ticket);
@@ -183,7 +357,7 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
 router.delete(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const idParam = req.params.id;
-    const id = parseInt(typeof idParam === 'string' ? idParam : idParam![0], 10);
+    const id = parseInt(typeof idParam === 'string' ? idParam : idParam[0], 10);
 
     if (Number.isNaN(id)) {
       return res.status(400).json({ error: 'Invalid ticket ID' });

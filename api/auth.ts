@@ -6,6 +6,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { authSchema } from './validation';
 import prisma from './prisma';
+import { AuthRequest, authenticate } from './middleware/auth';
 
 const app = express();
 app.use(express.json());
@@ -74,7 +75,7 @@ router.post(['/login', '/api/auth/login'], authLimiter, async (req: Request, res
         const { email, password } = validation.data;
         const user = await prisma.user.findUnique({ where: { email } });
 
-        if (!user || !(await bcrypt.compare(password, user.password))) {
+        if (!user || !user.password || !(await bcrypt.compare(password, user.password))) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
         
@@ -83,6 +84,32 @@ router.post(['/login', '/api/auth/login'], authLimiter, async (req: Request, res
     } catch (error: any) {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.get(['/me', '/api/auth/me'], authenticate, async (req: AuthRequest, res: Response) => {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id: req.userId! },
+            select: {
+                id: true,
+                email: true,
+                authSource: true,
+                githubUserId: true,
+                githubLogin: true,
+                githubAvatarUrl: true,
+                githubLinkedAt: true,
+            },
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json(user);
+    } catch (error) {
+        console.error('Fetch current user error:', error);
+        res.status(500).json({ error: 'Failed to fetch user profile' });
     }
 });
 

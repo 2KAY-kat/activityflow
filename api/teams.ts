@@ -2,22 +2,48 @@ import express, { Response } from 'express';
 import crypto from 'crypto';
 import prisma from './prisma';
 import { AuthRequest, authenticate } from './middleware/auth';
+import { teamSchema } from './validation';
 
 const router = express.Router();
 
 router.post(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Response) => {
-  const { name } = req.body;
-  if (!name) {
-    return res.status(400).json({ error: 'Team name is required' });
+  const validation = teamSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ error: 'Validation failed', details: validation.error.format() });
   }
 
+  const { name, sourceType, githubRepositoryId } = validation.data;
+
   try {
+    let githubRepository = null;
+
+    if (sourceType === 'GITHUB') {
+      githubRepository = await prisma.gitHubRepository.findUnique({
+        where: { id: githubRepositoryId! },
+        select: {
+          id: true,
+          fullName: true,
+          defaultBranch: true,
+          htmlUrl: true,
+          lastSyncedAt: true,
+        },
+      });
+
+      if (!githubRepository) {
+        return res.status(404).json({ error: 'Selected GitHub repository was not found' });
+      }
+    }
+
     const inviteCode = crypto.randomBytes(4).toString('hex').toUpperCase();
 
     const team = await prisma.team.create({
       data: {
         name,
         inviteCode,
+        sourceType,
+        githubRepoId: githubRepository?.id,
+        defaultBranch: githubRepository?.defaultBranch,
+        lastGithubSyncAt: githubRepository?.lastSyncedAt || null,
         members: {
           create: {
             userId: req.userId!,
@@ -26,6 +52,15 @@ router.post(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Res
         },
       },
       include: {
+        githubRepository: {
+          select: {
+            id: true,
+            fullName: true,
+            defaultBranch: true,
+            htmlUrl: true,
+            lastSyncedAt: true,
+          },
+        },
         members: true,
       },
     });
@@ -87,6 +122,15 @@ router.get(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Resp
       include: {
         team: {
           include: {
+            githubRepository: {
+              select: {
+                id: true,
+                fullName: true,
+                defaultBranch: true,
+                htmlUrl: true,
+                lastSyncedAt: true,
+              },
+            },
             _count: {
               select: { members: true, tickets: true },
             },
@@ -124,6 +168,52 @@ router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, asy
       return res.status(403).json({ error: 'Not a member of this team' });
     }
 
+    const team = await prisma.team.findUnique({
+      where: { id: teamId },
+      select: {
+        id: true,
+        sourceType: true,
+        githubRepoId: true,
+      },
+    });
+
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    if (team.sourceType === 'GITHUB' && team.githubRepoId) {
+      const collaborators = await prisma.repoCollaborator.findMany({
+        where: {
+          repositoryId: team.githubRepoId,
+          isActive: true,
+        },
+        orderBy: [{ login: 'asc' }],
+        select: {
+          id: true,
+          login: true,
+          displayName: true,
+          email: true,
+          roleName: true,
+          permission: true,
+          avatarUrl: true,
+          linkedUserId: true,
+        },
+      });
+
+      return res.json(
+        collaborators.map((collaborator) => ({
+          id: collaborator.id,
+          name: collaborator.displayName || collaborator.login,
+          email: collaborator.email,
+          login: collaborator.login,
+          role: collaborator.roleName || collaborator.permission || 'COLLABORATOR',
+          avatarUrl: collaborator.avatarUrl,
+          linkedUserId: collaborator.linkedUserId,
+          type: 'github',
+        }))
+      );
+    }
+
     const members = await prisma.teamMember.findMany({
       where: { teamId },
       include: {
@@ -136,8 +226,10 @@ router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, asy
     res.json(
       members.map((member) => ({
         id: member.user.id,
+        name: member.user.email,
         email: member.user.email,
         role: member.role,
+        type: 'manual',
       }))
     );
   } catch (error) {
@@ -151,4 +243,3 @@ app.use(express.json());
 app.use(router);
 
 export default app;
-

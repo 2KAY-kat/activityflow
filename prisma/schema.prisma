@@ -9,26 +9,38 @@ datasource db {
 }
 
 model User {
-  id          Int          @id @default(autoincrement())
-  email       String       @unique
-  password    String
-  tickets     Ticket[]     @relation("CreatedTickets")
-  assignedTo  Ticket[]     @relation("AssignedTickets")
-  memberships TeamMember[]
+  id                        Int                  @id @default(autoincrement())
+  email                     String               @unique
+  password                  String?
+  authSource                String               @default("LOCAL")
+  githubUserId              Int?                 @unique
+  githubLogin               String?
+  githubAvatarUrl           String?
+  githubLinkedAt            DateTime?
+  tickets                   Ticket[]             @relation("CreatedTickets")
+  assignedTo                Ticket[]             @relation("AssignedTickets")
+  memberships               TeamMember[]
+  createdGitHubInstallations GitHubInstallation[] @relation("CreatedGitHubInstallations")
+  linkedRepoCollaborators   RepoCollaborator[]   @relation("LinkedRepoCollaborators")
 }
 
 model Team {
-  id          Int          @id @default(autoincrement())
-  name        String
-  inviteCode  String       @unique
-  members     TeamMember[]
-  tickets     Ticket[]
-  createdAt   DateTime     @default(now())
+  id               Int               @id @default(autoincrement())
+  name             String
+  inviteCode       String            @unique
+  sourceType       String            @default("MANUAL")
+  githubRepoId     Int?
+  defaultBranch    String?
+  lastGithubSyncAt DateTime?
+  members          TeamMember[]
+  tickets          Ticket[]
+  githubRepository GitHubRepository? @relation(fields: [githubRepoId], references: [id])
+  createdAt        DateTime          @default(now())
 }
 
 model TeamMember {
   id      Int    @id @default(autoincrement())
-  role    String @default("MEMBER") // OWNER or MEMBER
+  role    String @default("MEMBER")
   user    User   @relation(fields: [userId], references: [id])
   userId  Int
   team    Team   @relation(fields: [teamId], references: [id])
@@ -38,19 +50,71 @@ model TeamMember {
 }
 
 model Ticket {
-  id          Int      @id @default(autoincrement())
-  title       String
-  description String?
-  status      String   @default("To Do")
-  priority    String   @default("Medium")
-  createdAt   DateTime @default(now())
-  
-  createdBy   User     @relation("CreatedTickets", fields: [userId], references: [id])
-  userId      Int
-  
-  assignee    User?    @relation("AssignedTickets", fields: [assigneeId], references: [id])
-  assigneeId  Int?
+  id                   Int              @id @default(autoincrement())
+  title                String
+  description          String?
+  status               String           @default("To Do")
+  priority             String           @default("Medium")
+  ticketKey            String?          @unique
+  githubBranchName     String?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime         @default(now())
+  createdBy            User             @relation("CreatedTickets", fields: [userId], references: [id])
+  userId               Int
+  assignee             User?            @relation("AssignedTickets", fields: [assigneeId], references: [id])
+  assigneeId           Int?
+  assigneeCollaborator RepoCollaborator? @relation("CollaboratorAssignedTickets", fields: [assigneeCollaboratorId], references: [id])
+  assigneeCollaboratorId Int?
+  team                 Team?            @relation(fields: [teamId], references: [id])
+  teamId               Int?
+}
 
-  team        Team?    @relation(fields: [teamId], references: [id])
-  teamId      Int?
+model GitHubInstallation {
+  id                   Int                @id @default(autoincrement())
+  githubInstallationId Int                @unique
+  accountLogin         String
+  accountType          String
+  createdByUser        User               @relation("CreatedGitHubInstallations", fields: [createdByUserId], references: [id])
+  createdByUserId      Int
+  repositories         GitHubRepository[]
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+}
+
+model GitHubRepository {
+  id           Int                @id @default(autoincrement())
+  githubRepoId Int                @unique
+  installation GitHubInstallation @relation(fields: [installationId], references: [id])
+  installationId Int
+  ownerLogin   String
+  name         String
+  fullName     String             @unique
+  defaultBranch String
+  isPrivate    Boolean            @default(true)
+  htmlUrl      String
+  isActive     Boolean            @default(true)
+  lastSyncedAt DateTime?
+  teams        Team[]
+  collaborators RepoCollaborator[]
+}
+
+model RepoCollaborator {
+  id            Int             @id @default(autoincrement())
+  repository    GitHubRepository @relation(fields: [repositoryId], references: [id])
+  repositoryId  Int
+  githubUserId  Int
+  login         String
+  displayName   String?
+  avatarUrl     String?
+  email         String?
+  roleName      String?
+  permission    String?
+  isActive      Boolean         @default(true)
+  linkedUser    User?           @relation("LinkedRepoCollaborators", fields: [linkedUserId], references: [id])
+  linkedUserId  Int?
+  assignedTickets Ticket[]      @relation("CollaboratorAssignedTickets")
+  lastSyncedAt  DateTime?
+
+  @@unique([repositoryId, githubUserId])
 }

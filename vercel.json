@@ -22,6 +22,7 @@
     "routes": [
         { "src": "/api/health(/.*)?", "dest": "/api/health.ts" },
         { "src": "/api/auth(/.*)?", "dest": "/api/auth.ts" },
+        { "src": "/api/github(/.*)?", "dest": "/api/github.ts" },
         { "src": "/api/tickets(/.*)?", "dest": "/api/tickets.ts" },
         { "src": "/api/teams(/.*)?", "dest": "/api/teams.ts" },
         { "src": "/css/(.*)", "dest": "/css/$1" },

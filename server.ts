@@ -3,6 +3,7 @@ import path from 'path';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import auth from './api/auth';
+import github from './api/github';
 import tickets from './api/tickets';
 import health from './api/health';
 import teams from './api/teams';
@@ -23,6 +24,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // API Routes - MUST be above express.static to avoid conflicts with 'api' directory
 app.use('/api/auth', auth);
+app.use('/api/github', github);
 app.use('/api/tickets', tickets);
 app.use('/api/health', health);
 app.use('/api/teams', teams);

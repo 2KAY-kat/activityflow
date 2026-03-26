@@ -25,3 +25,15 @@ export async function isTeamAssignee(teamId: number, assigneeId: number) {
 
   return Boolean(membership);
 }
+
+export async function isRepoCollaborator(repositoryId: number, collaboratorId: number) {
+  const collaborator = await prisma.repoCollaborator.findFirst({
+    where: {
+      id: collaboratorId,
+      repositoryId,
+      isActive: true,
+    },
+  });
+
+  return Boolean(collaborator);
+}

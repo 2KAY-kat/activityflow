@@ -10,6 +10,7 @@ let isLoginMode = true;
 let currentTeamId = localStorage.getItem('currentTeamId');
 let myTeams = [];
 let teamMembers = [];
+let githubRepositories = [];
 
 // Expose functions to window
 window.openTeamsModal = openTeamsModal;
@@ -18,6 +19,7 @@ window.switchTeamTab = switchTeamTab;
 window.createTeam = createTeam;
 window.joinTeam = joinTeam;
 window.selectTeam = selectTeam;
+window.toggleTeamSourceFields = toggleTeamSourceFields;
 
 // Expose functions to window for inline HTML onclick/ondrop handlers
 window.toggleTheme = toggleTheme;
@@ -51,6 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('authForm').addEventListener('submit', handleAuth);
     document.getElementById('ticketForm').addEventListener('submit', saveTicket);
+    toggleTeamSourceFields();
 
     // loadTickets is now called within checkAuth
 });
@@ -200,6 +203,53 @@ function logout() {
     checkAuth();
 }
 
+function getCurrentTeam() {
+    return myTeams.find(team => team.id == currentTeamId) || null;
+}
+
+function getMemberLabel(member) {
+    return member.name || member.email || member.login || 'Unknown';
+}
+
+function getMemberAvatarText(member) {
+    const label = getMemberLabel(member);
+    return label.substring(0, 2).toUpperCase();
+}
+
+function renderGitHubRepositoryOptions() {
+    const select = document.getElementById('githubRepositorySelect');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">Select a synced repository</option>' +
+        githubRepositories.map(repo => `<option value="${repo.id}">${repo.fullName}</option>`).join('');
+}
+
+function toggleTeamSourceFields() {
+    const sourceType = document.getElementById('newTeamSourceType')?.value || 'MANUAL';
+    const githubFields = document.getElementById('githubTeamFields');
+
+    if (githubFields) {
+        githubFields.style.display = sourceType === 'GITHUB' ? 'block' : 'none';
+    }
+}
+
+async function loadGitHubRepositories() {
+    if (!authToken) return;
+
+    try {
+        const res = await fetch('/api/github/repositories', {
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+
+        if (res.ok) {
+            githubRepositories = await res.json();
+            renderGitHubRepositoryOptions();
+        }
+    } catch (error) {
+        console.error('Failed to load GitHub repositories:', error);
+    }
+}
+
 async function loadTickets() {
     if (!authToken) return;
     renderSkeletons();
@@ -267,8 +317,11 @@ function renderBoard() {
         card.ondragstart = (e) => dragStart(e, ticket.id);
         
         const priorityLower = ticket.priority.toLowerCase();
-        const assigneeInfo = ticket.assignee ? ticket.assignee.email : 'Unassigned';
-        const initials = ticket.assignee ? ticket.assignee.email.substring(0,2).toUpperCase() : '??';
+        const collaborator = ticket.assigneeCollaborator;
+        const assigneeLabel = collaborator
+            ? (collaborator.displayName || collaborator.login || collaborator.email || 'GitHub Collaborator')
+            : (ticket.assignee ? ticket.assignee.email : 'Unassigned');
+        const initials = assigneeLabel.substring(0, 2).toUpperCase();
 
         card.innerHTML = `
             <div class="ticket-header">
@@ -281,7 +334,7 @@ function renderBoard() {
             ${ticket.description ? `<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${ticket.description}</div>` : ''}
             <div class="ticket-footer">
                 <span class="badge priority-${priorityLower}">${ticket.priority}</span>
-                <div class="assignee-avatar" title="${assigneeInfo}">${initials}</div>
+                <div class="assignee-avatar" title="${assigneeLabel}">${initials}</div>
             </div>
         `;
         col.appendChild(card);
@@ -309,11 +362,16 @@ async function saveTicket(e) {
     if (!authToken) return;
 
     const btn = document.getElementById('saveTicketBtn');
+    const currentTeam = getCurrentTeam();
+    const assigneeValue = document.getElementById('ticketAssignee').value
+        ? parseInt(document.getElementById('ticketAssignee').value)
+        : null;
     const ticketData = {
         title: document.getElementById('ticketTitle').value,
         description: document.getElementById('ticketDescription').value,
         priority: document.getElementById('ticketPriority').value,
-        assigneeId: document.getElementById('ticketAssignee').value ? parseInt(document.getElementById('ticketAssignee').value) : null,
+        assigneeId: currentTeam?.sourceType === 'GITHUB' ? null : assigneeValue,
+        assigneeCollaboratorId: currentTeam?.sourceType === 'GITHUB' ? assigneeValue : null,
         status: document.getElementById('ticketStatus').value,
         teamId: currentTeamId ? parseInt(currentTeamId) : null
     };
@@ -338,7 +396,8 @@ async function saveTicket(e) {
             closeTicketModal();
             loadTickets();
         } else {
-            toast.show('Failed to save ticket', 'error');
+            const data = await res.json().catch(() => ({}));
+            toast.show(data.error || 'Failed to save ticket', 'error');
         }
     } catch (error) {
         toast.show('Network error', 'error');
@@ -367,7 +426,7 @@ function editTicket(id) {
     document.getElementById('ticketTitle').value = ticket.title;
     document.getElementById('ticketDescription').value = ticket.description || '';
     document.getElementById('ticketPriority').value = ticket.priority;
-    document.getElementById('ticketAssignee').value = ticket.assigneeId || '';
+    document.getElementById('ticketAssignee').value = ticket.assigneeCollaboratorId || ticket.assigneeId || '';
     document.getElementById('ticketStatus').value = ticket.status;
 
     document.getElementById('ticketModal').classList.add('active');
@@ -461,6 +520,7 @@ async function drop(e) {
 async function openTeamsModal() {
     document.getElementById('teamsModal').classList.add('active');
     await loadTeams();
+    await loadGitHubRepositories();
 }
 
 function closeModal(modalId) {
@@ -513,6 +573,9 @@ function renderTeamsList() {
         <div class="team-item ${currentTeamId == team.id ? 'active' : ''}" onclick="selectTeam(${team.id})">
             <div>
                 <strong>${team.name}</strong>
+                <div style="font-size: 0.8em; color: var(--text-muted); margin-top: 4px;">
+                    ${team.sourceType === 'GITHUB' && team.githubRepository ? `GitHub: ${team.githubRepository.fullName}` : 'Manual Team'}
+                </div>
                 <div class="team-stats">
                     <span><i class="fa-solid fa-users"></i> ${team._count.members} Members</span>
                     <span><i class="fa-solid fa-ticket"></i> ${team._count.tickets} Tickets</span>
@@ -525,8 +588,15 @@ function renderTeamsList() {
 
 async function createTeam() {
     const nameInput = document.getElementById('newTeamName');
+    const sourceTypeInput = document.getElementById('newTeamSourceType');
+    const githubRepositoryInput = document.getElementById('githubRepositorySelect');
     const name = nameInput.value.trim();
+    const sourceType = sourceTypeInput?.value || 'MANUAL';
+    const githubRepositoryId = githubRepositoryInput?.value ? parseInt(githubRepositoryInput.value) : null;
     if (!name) return toast.show('Team name is required', 'error');
+    if (sourceType === 'GITHUB' && !githubRepositoryId) {
+        return toast.show('Select a synced GitHub repository', 'error');
+    }
 
     try {
         const res = await fetch('/api/teams', {
@@ -535,12 +605,15 @@ async function createTeam() {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${authToken}`
             },
-            body: JSON.stringify({ name })
+            body: JSON.stringify({ name, sourceType, githubRepositoryId })
         });
         
         if (res.ok) {
             toast.show('Team created!', 'success');
             nameInput.value = '';
+            if (sourceTypeInput) sourceTypeInput.value = 'MANUAL';
+            if (githubRepositoryInput) githubRepositoryInput.value = '';
+            toggleTeamSourceFields();
             await loadTeams();
             switchTeamTab('myTeams');
         } else {
@@ -590,11 +663,14 @@ async function selectTeam(teamId) {
     if (team) {
         const info = document.getElementById('activeTeamInfo');
         if (info) {
+            const repoLabel = team.sourceType === 'GITHUB' && team.githubRepository
+                ? team.githubRepository.fullName
+                : 'Manual Team';
             info.innerHTML = `
                 <div>
                     <strong>${team.name}</strong>
                     <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
-                        Active Workspace
+                        ${repoLabel}
                     </div>
                 </div>
                 <div class="invite-code-pill" title="Team Invite Code">
@@ -636,9 +712,10 @@ function renderMembersList() {
     section.style.display = 'block';
     list.innerHTML = teamMembers.map(m => `
         <li class="member-item">
-            <div class="assignee-avatar">${m.email.substring(0,2).toUpperCase()}</div>
+            <div class="assignee-avatar">${getMemberAvatarText(m)}</div>
             <div style="flex-grow: 1;">
-                <div style="font-weight: 500;">${m.email}</div>
+                <div style="font-weight: 500;">${getMemberLabel(m)}</div>
+                ${m.login && m.email ? `<div style="font-size: 0.78rem; color: var(--text-muted);">${m.email}</div>` : ''}
             </div>
             <span class="member-role">${m.role}</span>
         </li>
@@ -651,7 +728,7 @@ function updateAssigneeDropdown() {
     
     const currentValue = select.value;
     select.innerHTML = '<option value="">Unassigned</option>' + 
-        teamMembers.map(m => `<option value="${m.id}">${m.email}</option>`).join('');
+        teamMembers.map(m => `<option value="${m.id}">${getMemberLabel(m)}</option>`).join('');
     
     select.value = currentValue;
 }
