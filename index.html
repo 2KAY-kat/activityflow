@@ -15,17 +15,22 @@
         <div class="header-container">
             <div class="brand">
                 <div class="brand-icon"><i class="fa-solid fa-code-branch"></i></div>
-                <h1>DevTickets <span id="currentTeamDisplay" class="team-title-badge"></span></h1>
+                <div class="brand-text">
+                    <h1>DevTickets</h1>
+                    <span id="currentTeamDisplay" class="team-title-badge"></span>
+                </div>
             </div>
             
             <div class="header-controls">
-                <button id="headerNewTicket" class="btn btn-primary" onclick="openTicketModal()" style="display: none;"><i class="fa-solid fa-plus"></i> <span>New Ticket</span></button>
-                <button id="headerLogin" class="btn btn-primary" onclick="document.getElementById('authModal').classList.add('active')" style="display: none;"><i class="fa-solid fa-right-to-bracket"></i> <span>Sign In</span></button>
+                <div class="header-primary-actions">
+                    <button id="headerNewTicket" class="btn btn-primary header-primary-btn" onclick="openTicketModal()" style="display: none;"><i class="fa-solid fa-plus"></i> <span>New Ticket</span></button>
+                    <button id="headerLogin" class="btn btn-primary header-primary-btn" onclick="document.getElementById('authModal').classList.add('active')" style="display: none;"><i class="fa-solid fa-right-to-bracket"></i> <span>Sign In</span></button>
+                </div>
                 <div id="currentUserBadge" class="user-badge" style="display: none;"></div>
                 <div class="user-profile">
-                    <button class="icon-btn" onclick="openTeamsModal()" title="Teams"><i class="fa-solid fa-users"></i></button>
+                    <button id="headerTeamsBtn" class="icon-btn" onclick="openTeamsModal()" title="Teams"><i class="fa-solid fa-users"></i></button>
                     <button class="icon-btn" onclick="toggleTheme()" title="Toggle Theme"><i class="fa-solid fa-moon" id="themeIcon"></i></button>
-                    <button class="icon-btn" onclick="syncData()" title="Sync Data"><i class="fa-solid fa-rotate"></i></button>
+                    <button id="headerSyncBtn" class="icon-btn" onclick="syncData()" title="Sync Data"><i class="fa-solid fa-rotate"></i></button>
                     <button class="icon-btn" id="logoutBtn" onclick="logout()" title="Logout" style="display: none;"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
                 </div>
             </div>
@@ -179,8 +184,8 @@
                 </div>
                 
                 <div class="teams-tabs">
-                    <button class="tab-btn active" onclick="switchTeamTab('myTeams')"><i class="fa-solid fa-users"></i> My Teams</button>
-                    <button class="tab-btn" onclick="switchTeamTab('joinCreate')"><i class="fa-solid fa-plus"></i> Join / Create</button>
+                    <button id="teamsTabButtonMyTeams" class="tab-btn active" onclick="switchTeamTab('myTeams')"><i class="fa-solid fa-users"></i> My Teams</button>
+                    <button id="teamsTabButtonJoinCreate" class="tab-btn" onclick="switchTeamTab('joinCreate')"><i class="fa-solid fa-plus"></i> Join / Create</button>
                 </div>
 
                 <div id="myTeamsTab" class="tab-content active">

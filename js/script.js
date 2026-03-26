@@ -275,8 +275,8 @@ function checkAuth() {
     const logoutBtn = document.getElementById('logoutBtn');
     const headerNewTicket = document.getElementById('headerNewTicket');
     const headerLogin = document.getElementById('headerLogin');
-    const teamsBtn = document.querySelector('button[onclick="openTeamsModal()"]');
-    const syncBtn = document.querySelector('button[onclick="syncData()"]');
+    const teamsBtn = document.getElementById('headerTeamsBtn');
+    const syncBtn = document.getElementById('headerSyncBtn');
     
     if (authToken) {
         if (!currentUser) {
@@ -1173,14 +1173,16 @@ function closeModal(modalId) {
 }
 
 function switchTeamTab(tab) {
+    const myTeamsButton = document.getElementById('teamsTabButtonMyTeams');
+    const joinCreateButton = document.getElementById('teamsTabButtonJoinCreate');
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     
     if (tab === 'myTeams') {
-        document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+        myTeamsButton?.classList.add('active');
         document.getElementById('myTeamsTab').classList.add('active');
     } else {
-        document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+        joinCreateButton?.classList.add('active');
         document.getElementById('joinCreateTab').classList.add('active');
     }
 }
