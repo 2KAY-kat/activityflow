@@ -343,10 +343,13 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
 
     if (status !== undefined && status !== existingTicket.status) {
       const effectiveAssignee = {
-        assigneeId: 'assigneeId' in assignmentData ? assignmentData.assigneeId ?? null : existingTicket.assigneeId,
+        assigneeId:
+          'assigneeId' in assignmentData
+            ? ((assignmentData.assigneeId ?? null) as number | null)
+            : existingTicket.assigneeId,
         assigneeCollaboratorId:
           'assigneeCollaboratorId' in assignmentData
-            ? assignmentData.assigneeCollaboratorId ?? null
+            ? ((assignmentData.assigneeCollaboratorId ?? null) as number | null)
             : existingTicket.assigneeCollaboratorId,
       };
       const canUpdateStatus = await canUserUpdateTicketStatus(req.userId!, effectiveAssignee);
