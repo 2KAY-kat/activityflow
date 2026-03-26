@@ -1259,14 +1259,25 @@ textarea {
     color: var(--emerald-500);
 }
 
+.member-status.idle {
+    background: rgba(59, 130, 246, 0.12);
+    color: var(--blue-500);
+}
+
+.member-status.offline {
+    background: rgba(148, 163, 184, 0.14);
+    color: var(--text-muted);
+}
+
 .member-status.pending {
     background: rgba(245, 158, 11, 0.12);
     color: var(--amber-500);
 }
 
+.member-status.unlinked,
 .member-status.inactive {
-    background: rgba(148, 163, 184, 0.14);
-    color: var(--text-muted);
+    background: rgba(244, 63, 94, 0.12);
+    color: var(--rose-500);
 }
 
 .team-title-badge {

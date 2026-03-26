@@ -19,6 +19,7 @@ let selectedTeamGitHubStatus = null;
 let pendingInviteContext = null;
 let pendingInvitePromptShown = false;
 let pendingTicketFocusId = null;
+let presenceHeartbeatId = null;
 
 // Expose functions to window
 window.openTeamsModal = openTeamsModal;
@@ -67,6 +68,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Poll system health every 30 seconds
     setInterval(checkSystemHealth, 30000);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            sendPresenceHeartbeat();
+        }
+    });
 
     document.getElementById('authForm').addEventListener('submit', handleAuth);
     document.getElementById('ticketForm').addEventListener('submit', saveTicket);
@@ -286,7 +293,9 @@ function checkAuth() {
         if (syncBtn) syncBtn.style.display = 'flex';
         if (currentTeamId) {
             loadTickets();
+            startPresenceHeartbeat();
         } else {
+            stopPresenceHeartbeat();
             loadTeams();
         }
 
@@ -294,6 +303,7 @@ function checkAuth() {
             handlePendingGitHubInstall();
         }
     } else {
+        stopPresenceHeartbeat();
         if (landingPage) landingPage.style.display = 'flex';
         if (dashboard) dashboard.style.display = 'none';
         if (logoutBtn) logoutBtn.style.display = 'none';
@@ -362,6 +372,55 @@ async function handlePendingInviteContext() {
     }
 }
 
+function stopPresenceHeartbeat() {
+    if (presenceHeartbeatId) {
+        clearInterval(presenceHeartbeatId);
+        presenceHeartbeatId = null;
+    }
+}
+
+async function sendPresenceHeartbeat() {
+    if (!authToken || !currentTeamId || document.visibilityState === 'hidden') return;
+
+    try {
+        const res = await fetch(`/api/teams/${currentTeamId}/presence`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+
+        if (res.ok) {
+            const data = await res.json().catch(() => ({}));
+            if (currentUser) {
+                currentUser.lastActiveAt = data.lastActiveAt || new Date().toISOString();
+            }
+
+            const teamsModal = document.getElementById('teamsModal');
+            if (teamsModal?.classList.contains('active')) {
+                await loadTeamMembers(currentTeamId);
+            }
+        } else if (res.status === 401) {
+            logout();
+        } else if (res.status === 403) {
+            stopPresenceHeartbeat();
+        }
+    } catch (error) {
+        console.error('Failed to update presence:', error);
+    }
+}
+
+function startPresenceHeartbeat() {
+    stopPresenceHeartbeat();
+
+    if (!authToken || !currentTeamId) {
+        return;
+    }
+
+    sendPresenceHeartbeat();
+    presenceHeartbeatId = window.setInterval(() => {
+        sendPresenceHeartbeat();
+    }, 45000);
+}
+
 function toggleAuthMode() {
     isLoginMode = !isLoginMode;
     const btn = document.getElementById('authSubmitBtn');
@@ -420,6 +479,7 @@ async function handleAuth(e) {
 }
 
 function logout() {
+    stopPresenceHeartbeat();
     authToken = null;
     currentTeamId = null;
     currentUser = null;
@@ -452,6 +512,42 @@ function formatDateTime(value) {
     if (Number.isNaN(date.getTime())) return 'Not synced yet';
 
     return date.toLocaleString();
+}
+
+function formatRelativeTime(value) {
+    if (!value) return 'never';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'never';
+
+    const diffMs = Date.now() - date.getTime();
+    const minutes = Math.max(1, Math.round(diffMs / 60000));
+
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+
+    const days = Math.round(hours / 24);
+    return `${days}d ago`;
+}
+
+function getMemberPresenceText(member) {
+    switch (member.status) {
+        case 'ACTIVE':
+            return 'Active now';
+        case 'IDLE':
+            return `Idle | Last active ${formatRelativeTime(member.lastActiveAt)}`;
+        case 'OFFLINE':
+            return `Offline | Last seen ${formatRelativeTime(member.lastActiveAt)}`;
+        case 'PENDING':
+            return 'Pending team access confirmation';
+        case 'UNLINKED':
+            return 'No ActivityFlow account linked yet';
+        default:
+            return 'Status unavailable';
+    }
 }
 
 function renderTeamGitHubStatus() {
@@ -702,6 +798,7 @@ async function loadTickets() {
         } else if (res.status === 403) {
             currentTeamId = null;
             localStorage.removeItem('currentTeamId');
+            stopPresenceHeartbeat();
             tickets = [];
             renderBoard();
             toast.show('Your saved team is not available for this account', 'error');
@@ -1015,6 +1112,7 @@ async function loadTeams() {
                 currentTeamId = null;
                 localStorage.removeItem('currentTeamId');
                 selectedTeamGitHubStatus = null;
+                stopPresenceHeartbeat();
             }
             renderTeamsList();
             renderTeamGitHubStatus();
@@ -1213,6 +1311,7 @@ async function confirmDeleteTeam() {
                 localStorage.removeItem('currentTeamId');
                 selectedTeamGitHubStatus = null;
                 teamMembers = [];
+                stopPresenceHeartbeat();
             }
 
             toast.show('Team deleted', 'success');
@@ -1273,6 +1372,7 @@ async function selectTeam(teamId) {
     renderMembersList();
     updateAssigneeDropdown();
     renderTeamGitHubStatus();
+    startPresenceHeartbeat();
     loadTeamMembers(teamId);
     if (team?.sourceType === 'GITHUB') {
         loadTeamGitHubStatus(teamId);
@@ -1321,9 +1421,10 @@ function renderMembersList() {
             <div style="flex-grow: 1;">
                 <div style="font-weight: 500;">${getMemberLabel(m)}</div>
                 ${m.email && m.email !== getMemberLabel(m) ? `<div style="font-size: 0.78rem; color: var(--text-muted);">${m.email}</div>` : ''}
+                <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 4px;">${getMemberPresenceText(m)}</div>
             </div>
             <span class="member-role">${m.role}</span>
-            <span class="member-status ${(m.status || 'INACTIVE').toLowerCase()}">${(m.status || 'INACTIVE').replace('_', ' ')}</span>
+            <span class="member-status ${(m.status || 'OFFLINE').toLowerCase()}">${(m.status || 'OFFLINE').replace('_', ' ')}</span>
         </li>
     `).join('');
 }

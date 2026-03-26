@@ -17,6 +17,7 @@ model User {
   githubLogin               String?
   githubAvatarUrl           String?
   githubLinkedAt            DateTime?
+  lastActiveAt              DateTime?
   tickets                   Ticket[]             @relation("CreatedTickets")
   assignedTo                Ticket[]             @relation("AssignedTickets")
   memberships               TeamMember[]
@@ -39,12 +40,13 @@ model Team {
 }
 
 model TeamMember {
-  id      Int    @id @default(autoincrement())
-  role    String @default("MEMBER")
-  user    User   @relation(fields: [userId], references: [id])
-  userId  Int
-  team    Team   @relation(fields: [teamId], references: [id])
-  teamId  Int
+  id           Int       @id @default(autoincrement())
+  role         String    @default("MEMBER")
+  lastActiveAt DateTime?
+  user         User      @relation(fields: [userId], references: [id])
+  userId       Int
+  team         Team      @relation(fields: [teamId], references: [id])
+  teamId       Int
 
   @@unique([userId, teamId])
 }

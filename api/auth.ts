@@ -8,6 +8,7 @@ import { authSchema } from './validation';
 import prisma from './prisma';
 import { AuthRequest, authenticate } from './middleware/auth';
 import { buildGitHubAuthorizeUrl, exchangeCodeForUserToken, fetchGitHubUser, getAppBaseUrl, getGitHubAppConfig } from './utils/github-app';
+import { markUserActive } from './utils/presence';
 
 const app = express();
 app.use(express.json());
@@ -99,6 +100,8 @@ router.post(['/login', '/api/auth/login'], authLimiter, async (req: Request, res
         if (!user || !user.password || !(await bcrypt.compare(password, user.password))) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
+
+        await markUserActive(user.id);
         
         const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
         res.json({ token });
@@ -196,6 +199,8 @@ router.get(['/github/callback', '/api/auth/github/callback'], authLimiter, async
             });
         }
 
+        await markUserActive(user.id);
+
         const appToken = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
         const returnTo = decoded.returnTo && decoded.returnTo.startsWith('/') ? decoded.returnTo : '/';
         const redirectBase = getAppBaseUrl().replace(/\/$/, '');
@@ -219,6 +224,7 @@ router.get(['/me', '/api/auth/me'], authenticate, async (req: AuthRequest, res: 
                 githubLogin: true,
                 githubAvatarUrl: true,
                 githubLinkedAt: true,
+                lastActiveAt: true,
             },
         });
 

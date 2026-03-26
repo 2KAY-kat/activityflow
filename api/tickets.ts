@@ -4,6 +4,7 @@ import cors from 'cors';
 import prisma from './prisma';
 import { ticketSchema, ticketUpdateSchema } from './validation';
 import { AuthRequest, authenticate } from './middleware/auth';
+import { markTeamMemberActive } from './utils/presence';
 import { isRepoCollaborator, isTeamAssignee, isTeamMember } from './utils/team-access';
 import { buildTicketKey } from './utils/ticket-key';
 import { sendTicketAssignmentNotification } from './utils/assignment-notifications';
@@ -166,12 +167,16 @@ router.get(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: Re
     return res.status(400).json({ error: 'Invalid team ID' });
   }
 
-  try {
-    if (teamId && !(await isTeamMember(req.userId!, teamId))) {
-      return res.status(403).json({ error: 'Not a member of this team' });
-    }
+    try {
+      if (teamId && !(await isTeamMember(req.userId!, teamId))) {
+        return res.status(403).json({ error: 'Not a member of this team' });
+      }
 
-    const tickets = await prisma.ticket.findMany({
+      if (teamId) {
+        await markTeamMemberActive(req.userId!, teamId);
+      }
+
+      const tickets = await prisma.ticket.findMany({
       where: teamId ? { teamId } : { userId: req.userId! },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -212,6 +217,8 @@ router.post(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: R
     if (!(await isTeamMember(req.userId!, teamId))) {
       return res.status(403).json({ error: 'Not a member of this team' });
     }
+
+    await markTeamMemberActive(req.userId!, teamId);
 
     const team = await getTeamContext(teamId);
     if (!team) {
@@ -328,6 +335,8 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
         return res.status(403).json({ error: 'Not a member of the selected team' });
       }
 
+      await markTeamMemberActive(req.userId!, nextTeamId);
+
       team = await getTeamContext(nextTeamId);
       if (!team) {
         return res.status(404).json({ error: 'Selected team was not found' });
@@ -430,6 +439,10 @@ router.delete(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthReques
 
     if (!(await canAccessTicket(req.userId!, existingTicket))) {
       return res.status(403).json({ error: 'You do not have access to this ticket' });
+    }
+
+    if (existingTicket.teamId) {
+      await markTeamMemberActive(req.userId!, existingTicket.teamId);
     }
 
     await prisma.ticket.delete({ where: { id } });

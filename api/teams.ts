@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import prisma from './prisma';
 import { AuthRequest, authenticate } from './middleware/auth';
 import { teamSchema } from './validation';
+import { getPresenceStatus, markTeamMemberActive } from './utils/presence';
 import { syncGitHubCollaborators } from './utils/github-sync';
 
 const router = express.Router();
@@ -92,6 +93,13 @@ async function buildGitHubTeamStatus(teamId: number) {
   };
 }
 
+function buildPresencePayload(lastActiveAt: Date | null | undefined) {
+  return {
+    status: getPresenceStatus(lastActiveAt),
+    lastActiveAt: lastActiveAt || null,
+  };
+}
+
 router.post(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Response) => {
   const validation = teamSchema.safeParse(req.body);
   if (!validation.success) {
@@ -177,6 +185,8 @@ router.post(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Res
       }
     }
 
+    await markTeamMemberActive(req.userId!, team.id);
+
     res.status(201).json({ team, githubSync });
   } catch (error) {
     console.error('Error creating team:', error);
@@ -217,8 +227,11 @@ router.post(['/join', '/api/teams/join'], authenticate, async (req: AuthRequest,
         userId: req.userId!,
         teamId: team.id,
         role: 'MEMBER',
+        lastActiveAt: new Date(),
       },
     });
+
+    await markTeamMemberActive(req.userId!, team.id);
 
     res.json({ message: 'Successfully joined team', team });
   } catch (error) {
@@ -402,10 +415,13 @@ router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, asy
             },
             select: {
               userId: true,
+              lastActiveAt: true,
             },
           })
         : [];
-      const linkedMembershipSet = new Set(linkedMemberships.map((linkedMembership) => linkedMembership.userId));
+      const linkedMembershipMap = new Map(
+        linkedMemberships.map((linkedMembership) => [linkedMembership.userId, linkedMembership.lastActiveAt])
+      );
 
       return res.json(
         collaborators.map((collaborator) => ({
@@ -416,11 +432,11 @@ router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, asy
           role: collaborator.roleName || collaborator.permission || 'COLLABORATOR',
           avatarUrl: collaborator.avatarUrl,
           linkedUserId: collaborator.linkedUserId,
-          status: collaborator.linkedUserId
-            ? linkedMembershipSet.has(collaborator.linkedUserId)
-              ? 'ACTIVE'
-              : 'PENDING'
-            : 'INACTIVE',
+          ...(collaborator.linkedUserId
+            ? linkedMembershipMap.has(collaborator.linkedUserId)
+              ? buildPresencePayload(linkedMembershipMap.get(collaborator.linkedUserId) || null)
+              : { status: 'PENDING', lastActiveAt: null }
+            : { status: 'UNLINKED', lastActiveAt: null }),
           type: 'github',
         }))
       );
@@ -433,6 +449,7 @@ router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, asy
           select: { id: true, email: true },
         },
       },
+      orderBy: [{ role: 'asc' }],
     });
 
     res.json(
@@ -441,13 +458,40 @@ router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, asy
         name: member.user.email,
         email: member.user.email,
         role: member.role,
-        status: 'ACTIVE',
+        ...buildPresencePayload(member.lastActiveAt),
         type: 'manual',
       }))
     );
   } catch (error) {
     console.error('Error fetching members:', error);
     res.status(500).json({ error: 'Failed to fetch members' });
+  }
+});
+
+router.post(['/:teamId/presence', '/api/teams/:teamId/presence'], authenticate, async (req: AuthRequest, res: Response) => {
+  const teamIdParam = req.params.teamId;
+  const teamId = parseInt(typeof teamIdParam === 'string' ? teamIdParam : teamIdParam[0], 10);
+
+  if (Number.isNaN(teamId)) {
+    return res.status(400).json({ error: 'Invalid team ID' });
+  }
+
+  try {
+    const membership = await requireTeamMembership(req.userId!, teamId);
+    if (!membership) {
+      return res.status(403).json({ error: 'Not a member of this team' });
+    }
+
+    const timestamp = new Date();
+    await markTeamMemberActive(req.userId!, teamId, timestamp);
+
+    res.json({
+      teamId,
+      ...buildPresencePayload(timestamp),
+    });
+  } catch (error) {
+    console.error('Error updating team presence:', error);
+    res.status(500).json({ error: 'Failed to update team presence' });
   }
 });
 
