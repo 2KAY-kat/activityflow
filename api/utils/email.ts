@@ -12,6 +12,14 @@ type AssignmentEmailInput = {
   requiresJoinConfirmation?: boolean;
 };
 
+type TeamInvitationEmailInput = {
+  toEmail: string;
+  teamName: string;
+  invitedByName: string;
+  actionUrl: string;
+  inviteCode: string;
+};
+
 type AssignmentUrlInput = {
   teamId?: number | null;
   ticketId?: number | null;
@@ -63,6 +71,10 @@ function getTransporter() {
   return nodemailer.createTransport(config.transport);
 }
 
+export function isEmailConfigured() {
+  return Boolean(getMailConfig());
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')
@@ -88,6 +100,10 @@ export function buildAssignmentUrl({ teamId, ticketId, inviteCode }: AssignmentU
   }
 
   return url.toString();
+}
+
+export function buildTeamInviteUrl(teamId: number, inviteCode: string) {
+  return buildAssignmentUrl({ teamId, inviteCode });
 }
 
 export async function sendAssignmentEmail({
@@ -128,7 +144,7 @@ export async function sendAssignmentEmail({
   const ctaLabel = requiresJoinConfirmation ? 'Confirm Contribution' : 'View Assignment';
 
   const mailOptions = {
-    from: `"ActivityFlow" <${config.from}>`,
+    from: config.from,
     to: toEmail,
     subject,
     text: [
@@ -174,6 +190,82 @@ export async function sendAssignmentEmail({
     return info;
   } catch (error) {
     console.error('Error sending assignment email:', error);
+    throw error;
+  }
+}
+
+export async function sendTeamInvitationEmail({
+  toEmail,
+  teamName,
+  invitedByName,
+  actionUrl,
+  inviteCode,
+}: TeamInvitationEmailInput) {
+  const config = getMailConfig();
+  const transporter = getTransporter();
+
+  if (!config || !transporter) {
+    console.warn('Email service not configured. Set SMTP_* or GMAIL_* variables to enable notifications.');
+    return;
+  }
+
+  if (!toEmail) {
+    console.warn('Team invitation skipped because no recipient email was provided.');
+    return;
+  }
+
+  const safeTeamName = escapeHtml(teamName);
+  const safeInvitedBy = escapeHtml(invitedByName);
+  const safeInviteCode = escapeHtml(inviteCode);
+  const subject = `Join ${teamName} on ActivityFlow`;
+
+  const mailOptions = {
+    from: config.from,
+    to: toEmail,
+    subject,
+    text: [
+      `You have been invited to join ${teamName} on ActivityFlow.`,
+      '',
+      `Invited by: ${invitedByName}`,
+      `Team: ${teamName}`,
+      `Invite code: ${inviteCode}`,
+      '',
+      'Open the invite link, sign in or create your account, and confirm your contribution to join the team:',
+      actionUrl,
+      '',
+      'After you join, you will be able to collaborate on the team board and be assigned to tickets.',
+    ].join('\n'),
+    html: `
+      <div style="font-family: sans-serif; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; max-width: 560px;">
+        <div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #2563eb; font-weight: 700;">ActivityFlow Team Invite</div>
+        <h2 style="margin: 12px 0 8px; color: #111827;">Join ${safeTeamName}</h2>
+        <p style="color: #374151; line-height: 1.6; margin: 0 0 12px;">
+          <strong>${safeInvitedBy}</strong> invited you to collaborate in <strong>${safeTeamName}</strong>.
+        </p>
+        <p style="color: #374151; line-height: 1.6; margin: 0 0 16px;">
+          Sign in or create your ActivityFlow account, confirm your contribution, and you will be added to the team board.
+        </p>
+        <div style="margin: 0 0 16px; padding: 12px; background: #f3f4f6; border-radius: 8px; color: #111827;">
+          Invite code: <strong>${safeInviteCode}</strong>
+        </div>
+        <div style="margin: 20px 0;">
+          <a href="${actionUrl}" style="background: #2563eb; color: white; padding: 12px 18px; border-radius: 8px; text-decoration: none; display: inline-block;">Confirm Contribution</a>
+        </div>
+        <p style="color: #6b7280; font-size: 13px; line-height: 1.5; margin: 16px 0 0;">
+          After you join, you can collaborate on the team board and be assigned to existing tickets.<br>
+          If the button does not work, open this link manually:<br>
+          <a href="${actionUrl}" style="color: #2563eb;">${actionUrl}</a>
+        </p>
+      </div>
+    `,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Team invitation email sent:', info.messageId);
+    return info;
+  } catch (error) {
+    console.error('Error sending team invitation email:', error);
     throw error;
   }
 }

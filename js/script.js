@@ -33,6 +33,7 @@ window.startGitHubLogin = startGitHubLogin;
 window.syncGitHubRepositories = syncGitHubRepositories;
 window.installGitHubApp = installGitHubApp;
 window.syncTeamGitHubCollaborators = syncTeamGitHubCollaborators;
+window.sendManualTeamInvite = sendManualTeamInvite;
 
 // Expose functions to window for inline HTML onclick/ondrop handlers
 window.toggleTheme = toggleTheme;
@@ -315,6 +316,7 @@ function checkAuth() {
         teamMembers = [];
         renderBoard();
         renderCurrentUserBadge();
+        renderTeamInvitePanel();
 
         if (pendingInviteContext) {
             authModal.classList.add('active');
@@ -496,6 +498,10 @@ function getCurrentTeam() {
     return myTeams.find(team => team.id == currentTeamId) || null;
 }
 
+function isTeamOwner(team) {
+    return Boolean(team && (team.isOwner || team.currentUserRole === 'OWNER'));
+}
+
 function getMemberLabel(member) {
     return member.name || member.email || member.login || 'Unknown';
 }
@@ -579,7 +585,7 @@ function renderTeamGitHubStatus() {
     const emptyMessage = collaboratorCount === 0
         ? '<div style="margin-top: 10px; color: var(--text-muted);">No GitHub collaborators are synced yet. Install the app on the repo and run sync if you need to refresh access.</div>'
         : '';
-    const canManageGitHub = team?.isOwner || team?.currentUserRole === 'OWNER';
+    const canManageGitHub = isTeamOwner(team);
     const syncAction = canManageGitHub
         ? `<button id="teamGitHubSyncBtn" type="button" class="btn btn-ghost" onclick="syncTeamGitHubCollaborators()">Sync Collaborators</button>`
         : '';
@@ -604,6 +610,38 @@ function renderTeamGitHubStatus() {
     `;
 }
 
+function renderTeamInvitePanel() {
+    const panel = document.getElementById('teamInvitePanel');
+    const team = getCurrentTeam();
+
+    if (!panel) return;
+
+    if (!team || team.sourceType !== 'MANUAL' || !isTeamOwner(team)) {
+        panel.style.display = 'none';
+        panel.innerHTML = '';
+        return;
+    }
+
+    panel.style.display = 'block';
+    panel.innerHTML = `
+        <div class="team-invite-panel">
+            <div class="team-invite-copy">
+                <div class="team-invite-title">Invite Collaborator</div>
+                <div class="team-invite-help">
+                    Send an email invite to add someone to this manual team. After they confirm contribution, they will show up in the assignee list for existing tickets.
+                </div>
+            </div>
+            <div class="team-invite-actions">
+                <input type="email" id="teamInviteEmail" class="form-control" placeholder="collaborator@company.com" autocomplete="email">
+                <button type="button" id="teamInviteSendBtn" class="btn btn-primary" onclick="sendManualTeamInvite()">Send Invite</button>
+            </div>
+            <div class="team-invite-meta">
+                Current invite code <span class="invite-code-pill">${team.inviteCode}</span>
+            </div>
+        </div>
+    `;
+}
+
 function renderGitHubIntegrationControls() {
     const installButton = document.getElementById('installGitHubAppBtn');
     const syncButton = document.getElementById('syncGitHubReposBtn');
@@ -616,6 +654,53 @@ function renderGitHubIntegrationControls() {
 
     if (syncButton) {
         syncButton.style.display = sourceType === 'GITHUB' ? 'inline-flex' : 'none';
+    }
+}
+
+async function sendManualTeamInvite() {
+    const team = getCurrentTeam();
+    const input = document.getElementById('teamInviteEmail');
+    const button = document.getElementById('teamInviteSendBtn');
+    const email = input?.value.trim();
+
+    if (!authToken || !team) return;
+    if (team.sourceType !== 'MANUAL') {
+        toast.show('Manual email invites are only available for manual teams', 'error');
+        return;
+    }
+    if (!isTeamOwner(team)) {
+        toast.show('Only team owners can invite collaborators', 'error');
+        return;
+    }
+    if (!email) {
+        toast.show('Collaborator email is required', 'error');
+        return;
+    }
+
+    setLoading(button, true);
+    try {
+        const res = await fetch(`/api/teams/${team.id}/invitations`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ email })
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+            toast.show(`Invitation sent to ${data.email || email}`, 'success');
+            if (input) {
+                input.value = '';
+            }
+        } else {
+            toast.show(data.error || 'Failed to send invite', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error while sending invite', 'error');
+    } finally {
+        setLoading(button, false);
     }
 }
 
@@ -1116,6 +1201,7 @@ async function loadTeams() {
             }
             renderTeamsList();
             renderTeamGitHubStatus();
+            renderTeamInvitePanel();
             await handlePendingInviteContext();
             
             // If no team selected but teams exist, select the first one
@@ -1372,6 +1458,7 @@ async function selectTeam(teamId) {
     renderMembersList();
     updateAssigneeDropdown();
     renderTeamGitHubStatus();
+    renderTeamInvitePanel();
     startPresenceHeartbeat();
     loadTeamMembers(teamId);
     if (team?.sourceType === 'GITHUB') {
@@ -1390,6 +1477,7 @@ async function loadTeamMembers(teamId) {
             renderMembersList();
             updateAssigneeDropdown();
             renderTeamGitHubStatus();
+            renderTeamInvitePanel();
         }
     } catch (error) {
         console.error('Failed to load members:', error);

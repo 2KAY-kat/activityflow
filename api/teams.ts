@@ -2,9 +2,10 @@ import express, { Response } from 'express';
 import crypto from 'crypto';
 import prisma from './prisma';
 import { AuthRequest, authenticate } from './middleware/auth';
-import { teamSchema } from './validation';
+import { teamInviteSchema, teamSchema } from './validation';
 import { getPresenceStatus, markTeamMemberActive } from './utils/presence';
 import { syncGitHubCollaborators } from './utils/github-sync';
+import { buildTeamInviteUrl, isEmailConfigured, sendTeamInvitationEmail } from './utils/email';
 
 const router = express.Router();
 
@@ -237,6 +238,100 @@ router.post(['/join', '/api/teams/join'], authenticate, async (req: AuthRequest,
   } catch (error) {
     console.error('Error joining team:', error);
     res.status(500).json({ error: 'Failed to join team' });
+  }
+});
+
+router.post(['/:teamId/invitations', '/api/teams/:teamId/invitations'], authenticate, async (req: AuthRequest, res: Response) => {
+  const teamIdParam = req.params.teamId;
+  const teamId = parseInt(typeof teamIdParam === 'string' ? teamIdParam : teamIdParam[0], 10);
+
+  if (Number.isNaN(teamId)) {
+    return res.status(400).json({ error: 'Invalid team ID' });
+  }
+
+  const validation = teamInviteSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ error: 'Validation failed', details: validation.error.format() });
+  }
+
+  if (!isEmailConfigured()) {
+    return res.status(503).json({ error: 'Email invitations are not configured on this server yet' });
+  }
+
+  try {
+    const ownerMembership = await requireOwnerMembership(req.userId!, teamId);
+    if (!ownerMembership) {
+      return res.status(403).json({ error: 'Only team owners can invite collaborators' });
+    }
+
+    const team = await prisma.team.findUnique({
+      where: { id: teamId },
+      select: {
+        id: true,
+        name: true,
+        inviteCode: true,
+        sourceType: true,
+      },
+    });
+
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+
+    if (team.sourceType !== 'MANUAL') {
+      return res.status(400).json({
+        error: 'Email invitations are only available for manual teams. GitHub-backed teams sync access from the repository.',
+      });
+    }
+
+    const targetEmail = validation.data.email.trim();
+    const [inviter, existingUser] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: req.userId! },
+        select: {
+          email: true,
+          githubLogin: true,
+        },
+      }),
+      prisma.user.findFirst({
+        where: {
+          email: {
+            equals: targetEmail,
+            mode: 'insensitive',
+          },
+        },
+        select: {
+          id: true,
+          email: true,
+          memberships: {
+            where: { teamId },
+            select: { id: true },
+          },
+        },
+      }),
+    ]);
+
+    if (existingUser?.memberships.length) {
+      return res.status(400).json({ error: 'That collaborator is already a member of this team' });
+    }
+
+    await sendTeamInvitationEmail({
+      toEmail: targetEmail,
+      teamName: team.name,
+      invitedByName: inviter?.githubLogin || inviter?.email || 'A Team Owner',
+      actionUrl: buildTeamInviteUrl(team.id, team.inviteCode),
+      inviteCode: team.inviteCode,
+    });
+
+    res.json({
+      message: 'Invitation email sent',
+      email: targetEmail,
+      teamId: team.id,
+      existingUserMatched: Boolean(existingUser),
+    });
+  } catch (error) {
+    console.error('Error sending team invitation:', error);
+    res.status(500).json({ error: 'Failed to send team invitation' });
   }
 });
 

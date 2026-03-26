@@ -33,7 +33,12 @@ export const ticketSchema = z.object({
 
 export const ticketUpdateSchema = ticketSchema.partial();
 
+export const teamInviteSchema = z.object({
+  email: z.string().trim().email('Invalid email format'),
+});
+
 export type AuthInput = z.infer<typeof authSchema>;
 export type TeamInput = z.infer<typeof teamSchema>;
 export type TicketInput = z.infer<typeof ticketSchema>;
 export type TicketUpdateInput = z.infer<typeof ticketUpdateSchema>;
+export type TeamInviteInput = z.infer<typeof teamInviteSchema>;
