@@ -130,6 +130,18 @@ router.get(['/github/callback', '/api/auth/github/callback'], authLimiter, async
 
     const code = typeof req.query.code === 'string' ? req.query.code : '';
     const state = typeof req.query.state === 'string' ? req.query.state : '';
+    const installationId = typeof req.query.installation_id === 'string' ? req.query.installation_id : '';
+    const setupAction = typeof req.query.setup_action === 'string' ? req.query.setup_action : '';
+
+    if (installationId && !state) {
+        const redirectBase = getAppBaseUrl().replace(/\/$/, '');
+        const hashParams = new URLSearchParams({
+            githubInstallationId: installationId,
+            setupAction: setupAction || 'install',
+        });
+
+        return res.redirect(`${redirectBase}/#${hashParams.toString()}`);
+    }
 
     if (!code || !state) {
         return res.status(400).json({ error: 'Missing GitHub callback parameters' });

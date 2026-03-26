@@ -11,6 +11,7 @@ let currentTeamId = localStorage.getItem('currentTeamId');
 let myTeams = [];
 let teamMembers = [];
 let githubRepositories = [];
+let pendingGitHubInstall = null;
 
 // Expose functions to window
 window.openTeamsModal = openTeamsModal;
@@ -100,13 +101,25 @@ function hydrateAuthFromHash() {
 
     const params = new URLSearchParams(hash);
     const token = params.get('authToken');
+    const githubInstallationId = params.get('githubInstallationId');
+    const setupAction = params.get('setupAction');
 
-    if (!token) return;
+    if (!token && !githubInstallationId) return;
 
-    authToken = token;
-    localStorage.setItem('authToken', token);
-    currentTeamId = null;
-    localStorage.removeItem('currentTeamId');
+    if (token) {
+        authToken = token;
+        localStorage.setItem('authToken', token);
+        currentTeamId = null;
+        localStorage.removeItem('currentTeamId');
+    }
+
+    if (githubInstallationId) {
+        pendingGitHubInstall = {
+            installationId: githubInstallationId,
+            setupAction: setupAction || 'install'
+        };
+    }
+
     window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
 }
 
@@ -153,6 +166,10 @@ function checkAuth() {
         } else {
             loadTeams();
         }
+
+        if (pendingGitHubInstall) {
+            handlePendingGitHubInstall();
+        }
     } else {
         if (landingPage) landingPage.style.display = 'flex';
         if (dashboard) dashboard.style.display = 'none';
@@ -164,6 +181,21 @@ function checkAuth() {
         tickets = [];
         renderBoard();
     }
+}
+
+async function handlePendingGitHubInstall() {
+    if (!pendingGitHubInstall) return;
+
+    const installState = pendingGitHubInstall;
+    pendingGitHubInstall = null;
+
+    if (!authToken) {
+        toast.show('GitHub App installed. Log in to sync repositories.', 'error');
+        return;
+    }
+
+    toast.show(`GitHub App ${installState.setupAction === 'update' ? 'updated' : 'installed'}. Syncing repositories...`, 'success');
+    await syncGitHubRepositories();
 }
 
 function toggleAuthMode() {
