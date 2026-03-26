@@ -1,7 +1,7 @@
 import express, { Response } from 'express';
 import prisma from './prisma';
 import { AuthRequest, authenticate } from './middleware/auth';
-import { getGitHubAppConfig } from './utils/github-app';
+import { getGitHubAppConfig, getGitHubAppInstallUrl } from './utils/github-app';
 import { syncGitHubCollaborators, syncGitHubInstallationsAndRepositories } from './utils/github-sync';
 
 const router = express.Router();
@@ -17,6 +17,18 @@ function assertGitHubConfigured() {
 
 router.get(['/status', '/api/github/status'], authenticate, async (_req: AuthRequest, res: Response) => {
   res.json({ configured: assertGitHubConfigured() });
+});
+
+router.get(['/install-url', '/api/github/install-url'], authenticate, async (_req: AuthRequest, res: Response) => {
+  if (!assertGitHubConfigured()) {
+    return res.status(503).json({ error: 'GitHub integration is not configured on the server' });
+  }
+
+  try {
+    res.json({ installUrl: getGitHubAppInstallUrl() });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to generate GitHub install URL' });
+  }
 });
 
 router.get(['/installations', '/api/github/installations'], authenticate, async (req: AuthRequest, res: Response) => {
@@ -45,7 +57,25 @@ router.post(['/installations/sync', '/api/github/installations/sync'], authentic
 
   try {
     const repositories = await syncGitHubInstallationsAndRepositories(req.userId!);
-    res.json({ message: 'GitHub installations synced', repositoryCount: repositories.length });
+    const installations = await prisma.gitHubInstallation.findMany({
+      where: { createdByUserId: req.userId! },
+      select: { id: true, accountLogin: true, accountType: true },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+
+    if (installations.length === 0) {
+      return res.status(409).json({
+        error: 'No GitHub App installations were found. Install the GitHub App on at least one account or repository first.',
+        installUrl: getGitHubAppInstallUrl(),
+      });
+    }
+
+    res.json({
+      message: 'GitHub installations synced',
+      installationCount: installations.length,
+      repositoryCount: repositories.length,
+      installations,
+    });
   } catch (error: any) {
     console.error('Sync GitHub installations error:', error);
     res.status(500).json({ error: error.message || 'Failed to sync GitHub installations' });

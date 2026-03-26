@@ -34,8 +34,25 @@ export function getGitHubAppConfig() {
   };
 }
 
+export function getGitHubAppInstallUrl() {
+  const { appSlug } = getGitHubAppConfig();
+  if (!appSlug) {
+    throw new Error('Missing required environment variable: GITHUB_APP_SLUG');
+  }
+
+  return `https://github.com/apps/${appSlug}/installations/new`;
+}
+
 export function getAppBaseUrl() {
-  return process.env.APP_URL || 'http://localhost:3000';
+  const rawBaseUrl =
+    process.env.APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+
+  return rawBaseUrl.replace(/\/$/, '');
+}
+
+export function getGitHubCallbackUrl() {
+  return `${getAppBaseUrl()}/api/auth/github/callback`;
 }
 
 export function createGitHubAppJwt() {
@@ -121,7 +138,7 @@ export async function githubRequestAllPages(path: string, token: string) {
 
 export function buildGitHubAuthorizeUrl(state: string) {
   const { clientId } = getGitHubAppConfig();
-  const redirectUri = `${getAppBaseUrl()}/api/auth/github/callback`;
+  const redirectUri = getGitHubCallbackUrl();
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -135,7 +152,7 @@ export function buildGitHubAuthorizeUrl(state: string) {
 
 export async function exchangeCodeForUserToken(code: string) {
   const { clientId, clientSecret } = getGitHubAppConfig();
-  const redirectUri = `${getAppBaseUrl()}/api/auth/github/callback`;
+  const redirectUri = getGitHubCallbackUrl();
 
   const response = await fetch(`${GITHUB_AUTH_URL}/access_token`, {
     method: 'POST',

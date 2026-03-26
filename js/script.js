@@ -22,6 +22,7 @@ window.selectTeam = selectTeam;
 window.toggleTeamSourceFields = toggleTeamSourceFields;
 window.startGitHubLogin = startGitHubLogin;
 window.syncGitHubRepositories = syncGitHubRepositories;
+window.installGitHubApp = installGitHubApp;
 
 // Expose functions to window for inline HTML onclick/ondrop handlers
 window.toggleTheme = toggleTheme;
@@ -104,6 +105,8 @@ function hydrateAuthFromHash() {
 
     authToken = token;
     localStorage.setItem('authToken', token);
+    currentTeamId = null;
+    localStorage.removeItem('currentTeamId');
     window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
 }
 
@@ -200,6 +203,8 @@ async function handleAuth(e) {
             if (isLoginMode) {
                 authToken = data.token;
                 localStorage.setItem('authToken', authToken);
+                currentTeamId = null;
+                localStorage.removeItem('currentTeamId');
                 toast.show('Logged in successfully', 'success');
                 checkAuth();
                 loadTeams();
@@ -219,7 +224,9 @@ async function handleAuth(e) {
 
 function logout() {
     authToken = null;
+    currentTeamId = null;
     localStorage.removeItem('authToken');
+    localStorage.removeItem('currentTeamId');
     toast.show('Logged out', 'success');
     checkAuth();
 }
@@ -286,10 +293,33 @@ async function syncGitHubRepositories() {
             toast.show(`GitHub sync complete${data.repositoryCount ? ` (${data.repositoryCount} repos)` : ''}`, 'success');
             await loadGitHubRepositories();
         } else {
-            toast.show(data.error || 'Failed to sync GitHub repositories', 'error');
+            if (res.status === 409 && data.installUrl) {
+                toast.show(data.error || 'Install the GitHub App before syncing repositories', 'error');
+            } else {
+                toast.show(data.error || 'Failed to sync GitHub repositories', 'error');
+            }
         }
     } catch (error) {
         toast.show('Network error while syncing GitHub repositories', 'error');
+    }
+}
+
+async function installGitHubApp() {
+    if (!authToken) return;
+
+    try {
+        const res = await fetch('/api/github/install-url', {
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok && data.installUrl) {
+            window.location.href = data.installUrl;
+        } else {
+            toast.show(data.error || 'Failed to open GitHub App installation', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error while opening GitHub install', 'error');
     }
 }
 
@@ -308,6 +338,13 @@ async function loadTickets() {
             renderBoard();
         } else if (res.status === 401) {
             logout();
+        } else if (res.status === 403) {
+            currentTeamId = null;
+            localStorage.removeItem('currentTeamId');
+            tickets = [];
+            renderBoard();
+            toast.show('Your saved team is not available for this account', 'error');
+            loadTeams();
         }
     } catch (error) {
         toast.show('Error loading tickets', 'error');
@@ -591,6 +628,10 @@ async function loadTeams() {
         });
         if (res.ok) {
             myTeams = await res.json();
+            if (currentTeamId && !myTeams.some(team => team.id == currentTeamId)) {
+                currentTeamId = null;
+                localStorage.removeItem('currentTeamId');
+            }
             renderTeamsList();
             
             // If no team selected but teams exist, select the first one
