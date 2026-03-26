@@ -5,7 +5,7 @@ import { AuthRequest, authenticate } from './middleware/auth';
 import { teamInviteSchema, teamSchema } from './validation';
 import { getPresenceStatus, markTeamMemberActive } from './utils/presence';
 import { syncGitHubCollaborators } from './utils/github-sync';
-import { buildTeamInviteUrl, isEmailConfigured, sendTeamInvitationEmail } from './utils/email';
+import { buildTeamInviteUrl, isEmailConfigured, sendTeamInvitationEmail, toMailErrorMessage } from './utils/email';
 
 const router = express.Router();
 
@@ -331,8 +331,12 @@ router.post(['/:teamId/invitations', '/api/teams/:teamId/invitations'], authenti
     });
   } catch (error) {
     console.error('Error sending team invitation:', error);
-    res.status(500).json({ error: 'Failed to send team invitation' });
+    res.status(500).json({ error: toMailErrorMessage(error) });
   }
+});
+
+router.get(['/:teamId/invitations', '/api/teams/:teamId/invitations'], authenticate, async (_req: AuthRequest, res: Response) => {
+  res.status(405).json({ error: 'Use POST to send invitations' });
 });
 
 router.get(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Response) => {

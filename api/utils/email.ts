@@ -26,37 +26,101 @@ type AssignmentUrlInput = {
   inviteCode?: string | null;
 };
 
+type MailConfig = {
+  transport: Record<string, unknown>;
+  from: string;
+};
+
+function readEnv(name: string) {
+  const rawValue = process.env[name];
+  if (!rawValue) {
+    return '';
+  }
+
+  const trimmedValue = rawValue.trim();
+  const hasWrappedQuotes =
+    (trimmedValue.startsWith('"') && trimmedValue.endsWith('"')) ||
+    (trimmedValue.startsWith("'") && trimmedValue.endsWith("'"));
+
+  return hasWrappedQuotes ? trimmedValue.slice(1, -1).trim() : trimmedValue;
+}
+
+function parseMailbox(value: string) {
+  const mailboxMatch = value.match(/^\s*"?([^"<]*)"?\s*<\s*([^>]+)\s*>\s*$/);
+  if (mailboxMatch) {
+    return {
+      name: mailboxMatch[1].trim(),
+      address: mailboxMatch[2].trim(),
+    };
+  }
+
+  if (value.includes('@')) {
+    return {
+      name: '',
+      address: value.trim(),
+    };
+  }
+
+  return null;
+}
+
+function normalizeFromHeader(preferredFrom: string, fallbackEmail: string, provider: 'smtp' | 'gmail') {
+  if (!preferredFrom) {
+    return `ActivityFlow <${fallbackEmail}>`;
+  }
+
+  const parsedMailbox = parseMailbox(preferredFrom);
+  if (!parsedMailbox) {
+    return `${preferredFrom} <${fallbackEmail}>`;
+  }
+
+  if (provider === 'gmail' && parsedMailbox.address.toLowerCase() !== fallbackEmail.toLowerCase()) {
+    return `${parsedMailbox.name || 'ActivityFlow'} <${fallbackEmail}>`;
+  }
+
+  return preferredFrom;
+}
+
 function getMailConfig() {
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPassword = process.env.SMTP_PASSWORD;
+  const smtpHost = readEnv('SMTP_HOST');
+  const smtpUser = readEnv('SMTP_USER');
+  const smtpPassword = readEnv('SMTP_PASSWORD');
+  const mailFrom = readEnv('MAIL_FROM');
+  const gmailUser = readEnv('GMAIL_USER');
+  const gmailAppPassword = readEnv('GMAIL_APP_PASSWORD').replace(/\s+/g, '');
 
   if (smtpHost && smtpUser && smtpPassword) {
-    return {
+    const config: MailConfig = {
       transport: {
         host: smtpHost,
-        port: Number(process.env.SMTP_PORT || 587),
-        secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+        port: Number(readEnv('SMTP_PORT') || 587),
+        secure: String(readEnv('SMTP_SECURE') || 'false').toLowerCase() === 'true',
         auth: {
           user: smtpUser,
           pass: smtpPassword,
         },
       },
-      from: process.env.MAIL_FROM || smtpUser,
+      from: normalizeFromHeader(mailFrom, smtpUser, 'smtp'),
     };
+
+    return config;
   }
 
-  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-    return {
+  if (gmailUser && gmailAppPassword) {
+    const config: MailConfig = {
       transport: {
-        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
         auth: {
-          user: process.env.GMAIL_USER,
-          pass: process.env.GMAIL_APP_PASSWORD,
+          user: gmailUser,
+          pass: gmailAppPassword,
         },
       },
-      from: process.env.MAIL_FROM || process.env.GMAIL_USER,
+      from: normalizeFromHeader(mailFrom, gmailUser, 'gmail'),
     };
+
+    return config;
   }
 
   return null;
@@ -73,6 +137,30 @@ function getTransporter() {
 
 export function isEmailConfigured() {
   return Boolean(getMailConfig());
+}
+
+export function toMailErrorMessage(error: any) {
+  const code = typeof error?.code === 'string' ? error.code : '';
+  const responseCode = typeof error?.responseCode === 'number' ? error.responseCode : null;
+  const message = typeof error?.message === 'string' ? error.message : '';
+
+  if (code === 'EAUTH' || responseCode === 535) {
+    return 'Email login failed. Check GMAIL_USER, GMAIL_APP_PASSWORD, and MAIL_FROM in Vercel.';
+  }
+
+  if (code === 'EENVELOPE') {
+    return 'The sender or recipient email address is invalid. Check MAIL_FROM and the invite email address.';
+  }
+
+  if (code === 'ESOCKET' || code === 'ETIMEDOUT' || code === 'ECONNECTION') {
+    return 'The server could not connect to Gmail. Retry in a moment and confirm outbound email settings.';
+  }
+
+  if (message) {
+    return message;
+  }
+
+  return 'Email delivery failed.';
 }
 
 function escapeHtml(value: string) {
