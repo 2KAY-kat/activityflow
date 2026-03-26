@@ -103,7 +103,8 @@ router.get(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Resp
 });
 
 router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, async (req: AuthRequest, res: Response) => {
-  const teamId = parseInt(req.params.teamId, 10);
+  const teamIdParam = req.params.teamId;
+  const teamId = parseInt(typeof teamIdParam === 'string' ? teamIdParam : teamIdParam[0], 10);
 
   if (Number.isNaN(teamId)) {
     return res.status(400).json({ error: 'Invalid team ID' });
@@ -150,3 +151,4 @@ app.use(express.json());
 app.use(router);
 
 export default app;
+
