@@ -10,8 +10,9 @@
     "module": "commonjs",
     "target": "es6",
     "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "esModuleInterop": true,
     "verbatimModuleSyntax": false,
-    "forceConsistentCasingInFileNames": true,
+    "forceConsistentCasingInFileNames": true
   }
 }

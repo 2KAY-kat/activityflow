@@ -1,150 +1,148 @@
-import express from 'express';
-import jwt from 'jsonwebtoken';
+import express, { Response } from 'express';
 import crypto from 'crypto';
 import prisma from './prisma';
+import { AuthRequest, authenticate } from './middleware/auth';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'N$1kQ2025_DB';
 
-// Middleware to authenticate
-const authenticate = (req: any, res: any, next: any) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token provided' });
+router.post(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Response) => {
+  const { name } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: 'Team name is required' });
+  }
 
-    const token = authHeader.split(' ')[1];
-    jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
-        if (err) return res.status(401).json({ error: 'Invalid token' });
-        req.userId = decoded.userId;
-        next();
+  try {
+    const inviteCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+
+    const team = await prisma.team.create({
+      data: {
+        name,
+        inviteCode,
+        members: {
+          create: {
+            userId: req.userId!,
+            role: 'OWNER',
+          },
+        },
+      },
+      include: {
+        members: true,
+      },
     });
-};
 
-// Create a team
-router.post(['/', '/api/teams'], authenticate, async (req: any, res: any) => {
-    const { name } = req.body;
-    if (!name) return res.status(400).json({ error: 'Team name is required' });
+    res.status(201).json(team);
+  } catch (error) {
+    console.error('Error creating team:', error);
+    res.status(500).json({ error: 'Failed to create team' });
+  }
+});
 
-    try {
-        const inviteCode = crypto.randomBytes(4).toString('hex').toUpperCase();
-        
-        const team = await prisma.team.create({
-            data: {
-                name,
-                inviteCode,
-                members: {
-                    create: {
-                        userId: req.userId,
-                        role: 'OWNER'
-                    }
-                }
+router.post(['/join', '/api/teams/join'], authenticate, async (req: AuthRequest, res: Response) => {
+  const { inviteCode } = req.body;
+  if (!inviteCode) {
+    return res.status(400).json({ error: 'Invite code is required' });
+  }
+
+  try {
+    const team = await prisma.team.findUnique({
+      where: { inviteCode },
+    });
+
+    if (!team) {
+      return res.status(404).json({ error: 'Invalid invite code' });
+    }
+
+    const existingMember = await prisma.teamMember.findUnique({
+      where: {
+        userId_teamId: {
+          userId: req.userId!,
+          teamId: team.id,
+        },
+      },
+    });
+
+    if (existingMember) {
+      return res.status(400).json({ error: 'Already a member of this team' });
+    }
+
+    await prisma.teamMember.create({
+      data: {
+        userId: req.userId!,
+        teamId: team.id,
+        role: 'MEMBER',
+      },
+    });
+
+    res.json({ message: 'Successfully joined team', team });
+  } catch (error) {
+    console.error('Error joining team:', error);
+    res.status(500).json({ error: 'Failed to join team' });
+  }
+});
+
+router.get(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const memberships = await prisma.teamMember.findMany({
+      where: { userId: req.userId! },
+      include: {
+        team: {
+          include: {
+            _count: {
+              select: { members: true, tickets: true },
             },
-            include: {
-                members: true
-            }
-        });
+          },
+        },
+      },
+    });
 
-        res.status(201).json(team);
-    } catch (error) {
-        console.error('Error creating team:', error);
-        res.status(500).json({ error: 'Failed to create team' });
-    }
+    res.json(memberships.map((membership) => membership.team));
+  } catch (error) {
+    console.error('Error fetching teams:', error);
+    res.status(500).json({ error: 'Failed to fetch teams' });
+  }
 });
 
-// Join a team via invite code
-router.post(['/join', '/api/teams/join'], authenticate, async (req: any, res: any) => {
-    const { inviteCode } = req.body;
-    if (!inviteCode) return res.status(400).json({ error: 'Invite code is required' });
+router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, async (req: AuthRequest, res: Response) => {
+  const teamId = parseInt(req.params.teamId, 10);
 
-    try {
-        const team = await prisma.team.findUnique({
-            where: { inviteCode }
-        });
+  if (Number.isNaN(teamId)) {
+    return res.status(400).json({ error: 'Invalid team ID' });
+  }
 
-        if (!team) return res.status(404).json({ error: 'Invalid invite code' });
+  try {
+    const membership = await prisma.teamMember.findUnique({
+      where: {
+        userId_teamId: {
+          userId: req.userId!,
+          teamId,
+        },
+      },
+    });
 
-        // Check if already a member
-        const existingMember = await prisma.teamMember.findUnique({
-            where: {
-                userId_teamId: {
-                    userId: req.userId,
-                    teamId: team.id
-                }
-            }
-        });
-
-        if (existingMember) return res.status(400).json({ error: 'Already a member of this team' });
-
-        await prisma.teamMember.create({
-            data: {
-                userId: req.userId,
-                teamId: team.id,
-                role: 'MEMBER'
-            }
-        });
-
-        res.json({ message: 'Successfully joined team', team });
-    } catch (error) {
-        console.error('Error joining team:', error);
-        res.status(500).json({ error: 'Failed to join team' });
+    if (!membership) {
+      return res.status(403).json({ error: 'Not a member of this team' });
     }
-});
 
-// Get user's teams
-router.get(['/', '/api/teams'], authenticate, async (req: any, res: any) => {
-    try {
-        const memberships = await prisma.teamMember.findMany({
-            where: { userId: req.userId },
-            include: {
-                team: {
-                    include: {
-                        _count: {
-                            select: { members: true, tickets: true }
-                        }
-                    }
-                }
-            }
-        });
+    const members = await prisma.teamMember.findMany({
+      where: { teamId },
+      include: {
+        user: {
+          select: { id: true, email: true },
+        },
+      },
+    });
 
-        res.json(memberships.map(m => m.team));
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch teams' });
-    }
-});
-
-// Get team members
-router.get(['/:teamId/members', '/api/teams/:teamId/members'], authenticate, async (req: any, res: any) => {
-    const teamId = parseInt(req.params.teamId);
-
-    try {
-        // Verify user is member of this team
-        const membership = await prisma.teamMember.findUnique({
-            where: {
-                userId_teamId: {
-                    userId: req.userId,
-                    teamId
-                }
-            }
-        });
-
-        if (!membership) return res.status(403).json({ error: 'Not a member of this team' });
-
-        const members = await prisma.teamMember.findMany({
-            where: { teamId },
-            include: {
-                user: {
-                    select: { id: true, email: true }
-                }
-            }
-        });
-
-        res.json(members.map(m => ({
-            id: m.user.id,
-            email: m.user.email,
-            role: m.role
-        })));
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch members' });
-    }
+    res.json(
+      members.map((member) => ({
+        id: member.user.id,
+        email: member.user.email,
+        role: member.role,
+      }))
+    );
+  } catch (error) {
+    console.error('Error fetching members:', error);
+    res.status(500).json({ error: 'Failed to fetch members' });
+  }
 });
 
 const app = express();

@@ -3,3 +3,4 @@ node_modules/
 .vercel/
 TODO.md
 dist/
+docs/github-sync-implementation-plan.md
