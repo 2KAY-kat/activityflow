@@ -254,10 +254,6 @@ router.post(['/:teamId/invitations', '/api/teams/:teamId/invitations'], authenti
     return res.status(400).json({ error: 'Validation failed', details: validation.error.format() });
   }
 
-  if (!isEmailConfigured()) {
-    return res.status(503).json({ error: 'Email invitations are not configured on this server yet' });
-  }
-
   try {
     const ownerMembership = await requireOwnerMembership(req.userId!, teamId);
     if (!ownerMembership) {
@@ -282,6 +278,10 @@ router.post(['/:teamId/invitations', '/api/teams/:teamId/invitations'], authenti
       return res.status(400).json({
         error: 'Email invitations are only available for manual teams. GitHub-backed teams sync access from the repository.',
       });
+    }
+
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ error: 'Email invitations are not configured on this server yet' });
     }
 
     const targetEmail = validation.data.email.trim();

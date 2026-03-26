@@ -1215,6 +1215,50 @@ textarea {
     margin-bottom: 0.5rem;
 }
 
+.team-invite-panel {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 14px;
+    background: var(--card-bg);
+}
+
+.team-invite-copy {
+    margin-bottom: 12px;
+}
+
+.team-invite-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.team-invite-help {
+    margin-top: 6px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.team-invite-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.team-invite-actions .form-control {
+    flex: 1 1 240px;
+}
+
+.team-invite-meta {
+    margin-top: 12px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
 .members-list {
     list-style: none;
     padding: 0;
