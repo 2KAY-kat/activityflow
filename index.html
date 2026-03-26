@@ -207,11 +207,12 @@
                                 <option value="GITHUB">GitHub Repo</option>
                             </select>
                         </div>
-                        <div class="form-group" id="githubTeamFields" style="display: none; margin-top: 12px;">
+                <div class="form-group" id="githubTeamFields" style="display: none; margin-top: 12px;">
                             <label for="githubRepositorySelect">GitHub Repository</label>
                             <select id="githubRepositorySelect" class="form-control">
                                 <option value="">Select a synced repository</option>
                             </select>
+                            <button type="button" class="btn btn-ghost btn-block" onclick="syncGitHubRepositories()" style="margin-top: 10px;">Sync GitHub Repositories</button>
                             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">
                                 Choose from repositories already synced into ActivityFlow.
                             </div>
@@ -249,6 +250,7 @@
                     <input type="password" id="password" required placeholder="••••••••">
                 </div>
                 <button type="submit" class="btn btn-primary btn-block" id="authSubmitBtn">Login</button>
+                <button type="button" class="btn btn-ghost btn-block" onclick="startGitHubLogin()" style="margin-top: 10px;">Login with GitHub</button>
                 <div class="auth-switch">
                     <span id="authToggleText">Don't have an account? </span>
                     <a href="#" onclick="toggleAuthMode()" id="authToggleBtn">Sign Up</a>

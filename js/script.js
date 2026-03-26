@@ -20,6 +20,8 @@ window.createTeam = createTeam;
 window.joinTeam = joinTeam;
 window.selectTeam = selectTeam;
 window.toggleTeamSourceFields = toggleTeamSourceFields;
+window.startGitHubLogin = startGitHubLogin;
+window.syncGitHubRepositories = syncGitHubRepositories;
 
 // Expose functions to window for inline HTML onclick/ondrop handlers
 window.toggleTheme = toggleTheme;
@@ -39,6 +41,7 @@ window.allowDrop = dragOver;
 window.drop = drop;
 
 document.addEventListener('DOMContentLoaded', () => {
+    hydrateAuthFromHash();
     initializeTheme();
     checkAuth();
     checkSystemHealth();
@@ -90,12 +93,30 @@ function initializeTheme() {
     updateThemeIcon(savedTheme);
 }
 
+function hydrateAuthFromHash() {
+    const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
+    if (!hash) return;
+
+    const params = new URLSearchParams(hash);
+    const token = params.get('authToken');
+
+    if (!token) return;
+
+    authToken = token;
+    localStorage.setItem('authToken', token);
+    window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+}
+
 function toggleTheme() {
     const currentTheme = document.documentElement.getAttribute('data-theme');
     const newTheme = currentTheme === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem('theme', newTheme);
     updateThemeIcon(newTheme);
+}
+
+function startGitHubLogin() {
+    window.location.href = `/api/auth/github/start?returnTo=${encodeURIComponent(window.location.pathname)}`;
 }
 
 function updateThemeIcon(theme) {
@@ -247,6 +268,28 @@ async function loadGitHubRepositories() {
         }
     } catch (error) {
         console.error('Failed to load GitHub repositories:', error);
+    }
+}
+
+async function syncGitHubRepositories() {
+    if (!authToken) return;
+
+    try {
+        const res = await fetch('/api/github/installations/sync', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+            toast.show(`GitHub sync complete${data.repositoryCount ? ` (${data.repositoryCount} repos)` : ''}`, 'success');
+            await loadGitHubRepositories();
+        } else {
+            toast.show(data.error || 'Failed to sync GitHub repositories', 'error');
+        }
+    } catch (error) {
+        toast.show('Network error while syncing GitHub repositories', 'error');
     }
 }
 

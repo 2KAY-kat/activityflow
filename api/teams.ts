@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import prisma from './prisma';
 import { AuthRequest, authenticate } from './middleware/auth';
 import { teamSchema } from './validation';
+import { syncGitHubCollaborators } from './utils/github-sync';
 
 const router = express.Router();
 
@@ -64,6 +65,14 @@ router.post(['/', '/api/teams'], authenticate, async (req: AuthRequest, res: Res
         members: true,
       },
     });
+
+    if (sourceType === 'GITHUB' && githubRepository?.id) {
+      try {
+        await syncGitHubCollaborators(githubRepository.id);
+      } catch (syncError) {
+        console.error('Initial GitHub collaborator sync failed:', syncError);
+      }
+    }
 
     res.status(201).json(team);
   } catch (error) {
