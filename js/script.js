@@ -49,6 +49,10 @@ window.promptDeleteTeam = promptDeleteTeam;
 window.closeDeleteTeamModal = closeDeleteTeamModal;
 window.confirmDeleteTeam = confirmDeleteTeam;
 window.toggleAuthMode = toggleAuthMode;
+window.openAccountSwitcher = openAccountSwitcher;
+window.addAnotherAccount = addAnotherAccount;
+window.switchToAccount = switchToAccount;
+window.forgetAccount = forgetAccount;
 
 // Drag and drop handlers
 window.dragStart = dragStart;
@@ -277,6 +281,10 @@ async function loadCurrentUser() {
         if (res.ok) {
             currentUser = await res.json();
             renderCurrentUserBadge();
+            // Save account to storage for switching
+            if (currentUser && authToken) {
+                saveAccountToStorage(authToken, currentUser);
+            }
         } else if (res.status === 401) {
             logout();
         }
@@ -515,7 +523,140 @@ function logout() {
     localStorage.removeItem('authToken');
     localStorage.removeItem('currentTeamId');
     toast.show('Logged out', 'success');
+    closeModal('accountSwitcherModal');
     checkAuth();
+}
+
+/* Account Switcher Functions */
+function saveAccountToStorage(token, user) {
+    const accounts = JSON.parse(localStorage.getItem('savedAccounts') || '[]');
+    
+    // Check if account already exists
+    const existingIndex = accounts.findIndex(acc => acc.email === user.email);
+    
+    const accountData = {
+        token,
+        email: user.email,
+        id: user.id,
+        githubLogin: user.githubLogin || null,
+        githubAvatarUrl: user.githubAvatarUrl || null,
+        savedAt: new Date().toISOString()
+    };
+    
+    if (existingIndex >= 0) {
+        // Update existing account
+        accounts[existingIndex] = accountData;
+    } else {
+        // Add new account (max 5 saved accounts)
+        if (accounts.length < 5) {
+            accounts.push(accountData);
+        }
+    }
+    
+    localStorage.setItem('savedAccounts', JSON.stringify(accounts));
+}
+
+function getSavedAccounts() {
+    return JSON.parse(localStorage.getItem('savedAccounts') || '[]');
+}
+
+function getCurrentAccountInfo() {
+    if (!currentUser) return null;
+    return {
+        email: currentUser.email,
+        id: currentUser.id,
+        githubLogin: currentUser.githubLogin || null,
+        githubAvatarUrl: currentUser.githubAvatarUrl || null
+    };
+}
+
+function openAccountSwitcher() {
+    const modal = document.getElementById('accountSwitcherModal');
+    const currentAccountDisplay = document.getElementById('currentAccountDisplay');
+    const accountsList = document.getElementById('accountsList');
+    
+    // Render current account
+    if (currentUser) {
+        const accountHtml = `
+            <h4 style="margin: 0 0 0.5rem 0; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Current Account</h4>
+            <div class="current-account-card">
+                <div class="account-avatar">
+                    ${currentUser.githubAvatarUrl ? `<img src="${currentUser.githubAvatarUrl}" alt="${currentUser.email}">` : `<i class="fa-solid fa-user"></i>`}
+                </div>
+                <div class="account-info">
+                    <div class="account-email">${currentUser.email}</div>
+                    ${currentUser.githubLogin ? `<div class="account-subtext">GitHub: ${currentUser.githubLogin}</div>` : ''}
+                </div>
+            </div>
+        `;
+        currentAccountDisplay.innerHTML = accountHtml;
+    }
+    
+    // Render saved accounts
+    const savedAccounts = getSavedAccounts();
+    const currentEmail = currentUser?.email;
+    
+    if (savedAccounts.length === 0) {
+        accountsList.innerHTML = '<div class="account-item saved-empty">No saved accounts yet</div>';
+    } else {
+        accountsList.innerHTML = savedAccounts
+            .filter(acc => acc.email !== currentEmail) // Don't show current account
+            .map(acc => `
+                <div class="account-item">
+                    <div class="account-avatar">
+                        ${acc.githubAvatarUrl ? `<img src="${acc.githubAvatarUrl}" alt="${acc.email}">` : `<i class="fa-solid fa-user"></i>`}
+                    </div>
+                    <div class="account-info">
+                        <div class="account-email">${acc.email}</div>
+                        ${acc.githubLogin ? `<div class="account-subtext">GitHub: ${acc.githubLogin}</div>` : ''}
+                    </div>
+                    <div class="account-item-actions">
+                        <button class="account-switch-btn" onclick="switchToAccount('${acc.email}')">Switch</button>
+                        <button class="account-forget-btn" onclick="forgetAccount('${acc.email}')" title="Remove account"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                </div>
+            `).join('');
+    }
+    
+    modal.classList.add('active');
+}
+
+function switchToAccount(email) {
+    const savedAccounts = getSavedAccounts();
+    const account = savedAccounts.find(acc => acc.email === email);
+    
+    if (!account) {
+        toast.show('Account not found', 'error');
+        return;
+    }
+    
+    // Save the token and reload
+    authToken = account.token;
+    localStorage.setItem('authToken', account.token);
+    localStorage.removeItem('currentTeamId');
+    currentTeamId = null;
+    
+    toast.show(`Switched to ${email}`, 'success');
+    closeModal('accountSwitcherModal');
+    checkAuth(); // This will reload the user data
+}
+
+function forgetAccount(email) {
+    if (!confirm(`Remove ${email} from saved accounts? You can still login manually.`)) {
+        return;
+    }
+    
+    let savedAccounts = getSavedAccounts();
+    savedAccounts = savedAccounts.filter(acc => acc.email !== email);
+    localStorage.setItem('savedAccounts', JSON.stringify(savedAccounts));
+    
+    toast.show('Account removed', 'success');
+    openAccountSwitcher(); // Refresh the modal
+}
+
+function addAnotherAccount() {
+    closeModal('accountSwitcherModal');
+    document.getElementById('authModal').classList.add('active');
 }
 
 function getCurrentTeam() {
