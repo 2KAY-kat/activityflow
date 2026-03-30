@@ -326,7 +326,7 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
       return res.status(403).json({ error: 'You do not have access to this ticket' });
     }
 
-    const { title, description, status, priority, assigneeId, assigneeCollaboratorId, teamId } = validation.data;
+    const { title, description, status, priority, assigneeId, assigneeCollaboratorId, teamId, githubBranchName } = validation.data;
 
     const nextTeamId = teamId ?? existingTicket.teamId ?? undefined;
     let team: TeamContext = null;
@@ -376,6 +376,7 @@ router.put(['/:id', '/api/tickets/:id'], authenticate, async (req: AuthRequest, 
         status,
         priority,
         teamId,
+        githubBranchName,
         ...assignmentData,
         ...buildLifecycleFieldsForUpdate(status, existingTicket),
       },
