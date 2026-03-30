@@ -49,7 +49,7 @@ window.promptDeleteTeam = promptDeleteTeam;
 window.closeDeleteTeamModal = closeDeleteTeamModal;
 window.confirmDeleteTeam = confirmDeleteTeam;
 window.toggleAuthMode = toggleAuthMode;
-window.openAccountSwitcher = openAccountSwitcher;
+window.toggleAccountDropdown = toggleAccountDropdown;
 window.addAnotherAccount = addAnotherAccount;
 window.switchToAccount = switchToAccount;
 window.forgetAccount = forgetAccount;
@@ -77,6 +77,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
             sendPresenceHeartbeat();
+        }
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        const dropdown = document.getElementById('accountSwitcherDropdown');
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (dropdown && !dropdown.contains(e.target) && !logoutBtn?.contains(e.target)) {
+            closeAccountDropdown();
         }
     });
 
@@ -304,7 +313,7 @@ function checkAuth() {
     const authModal = document.getElementById('authModal');
     const landingPage = document.getElementById('landingPage');
     const dashboard = document.getElementById('dashboard');
-    const logoutBtn = document.getElementById('logoutBtn');
+    const logoutBtnContainer = document.getElementById('logoutBtnContainer');
     const headerNewTicket = document.getElementById('headerNewTicket');
     const headerLogin = document.getElementById('headerLogin');
     const teamsBtn = document.getElementById('headerTeamsBtn');
@@ -319,7 +328,7 @@ function checkAuth() {
         authModal.classList.remove('active');
         if (landingPage) landingPage.style.display = 'none';
         if (dashboard) dashboard.style.display = 'flex';
-        if (logoutBtn) logoutBtn.style.display = 'flex';
+        if (logoutBtnContainer) logoutBtnContainer.style.display = 'block';
         if (headerNewTicket) headerNewTicket.style.display = 'flex';
         if (headerLogin) headerLogin.style.display = 'none';
         if (teamsBtn) teamsBtn.style.display = 'flex';
@@ -339,7 +348,7 @@ function checkAuth() {
         stopPresenceHeartbeat();
         if (landingPage) landingPage.style.display = 'flex';
         if (dashboard) dashboard.style.display = 'none';
-        if (logoutBtn) logoutBtn.style.display = 'none';
+        if (logoutBtnContainer) logoutBtnContainer.style.display = 'none';
         if (headerNewTicket) headerNewTicket.style.display = 'none';
         if (headerLogin) headerLogin.style.display = 'flex';
         if (teamsBtn) teamsBtn.style.display = 'none';
@@ -523,11 +532,68 @@ function logout() {
     localStorage.removeItem('authToken');
     localStorage.removeItem('currentTeamId');
     toast.show('Logged out', 'success');
-    closeModal('accountSwitcherModal');
+    closeAccountDropdown();
     checkAuth();
 }
 
 /* Account Switcher Functions */
+function toggleAccountDropdown(e) {
+    e.stopPropagation();
+    const dropdown = document.getElementById('accountSwitcherDropdown');
+    const isVisible = dropdown.style.display !== 'none';
+    
+    if (isVisible) {
+        dropdown.style.display = 'none';
+    } else {
+        renderAccountDropdown();
+        dropdown.style.display = 'block';
+    }
+}
+
+function closeAccountDropdown() {
+    document.getElementById('accountSwitcherDropdown').style.display = 'none';
+}
+
+function renderAccountDropdown() {
+    const currentAccountDisplay = document.getElementById('currentAccountDropdown');
+    const accountsList = document.getElementById('accountsDropdownList');
+    
+    // Render current account
+    if (currentUser) {
+        const accountHtml = `
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1;">
+                <i class="fa-solid fa-circle-user" style="font-size: 1rem;"></i>
+                <div class="account-email-dropdown">
+                    <div class="account-email-dropdown-name">${currentUser.email}</div>
+                    ${currentUser.githubLogin ? `<div class="account-email-dropdown-user">@${currentUser.githubLogin}</div>` : ''}
+                </div>
+            </div>
+            <i class="fa-solid fa-arrow-right-left account-switch-icon"></i>
+        `;
+        currentAccountDisplay.innerHTML = accountHtml;
+    }
+    
+    // Render saved accounts
+    const savedAccounts = getSavedAccounts();
+    const currentEmail = currentUser?.email;
+    
+    const otherAccounts = savedAccounts.filter(acc => acc.email !== currentEmail);
+    
+    if (otherAccounts.length === 0) {
+        accountsList.innerHTML = '';
+    } else {
+        accountsList.innerHTML = otherAccounts.map(acc => `
+            <button class="dropdown-item" onclick="switchToAccount('${acc.email}')">
+                <i class="fa-solid fa-circle-user"></i>
+                <div class="account-email-dropdown">
+                    <div class="account-email-dropdown-name">${acc.email}</div>
+                    ${acc.githubLogin ? `<div class="account-email-dropdown-user">@${acc.githubLogin}</div>` : ''}
+                </div>
+            </button>
+        `).join('');
+    }
+}
+
 function saveAccountToStorage(token, user) {
     const accounts = JSON.parse(localStorage.getItem('savedAccounts') || '[]');
     
@@ -570,57 +636,6 @@ function getCurrentAccountInfo() {
     };
 }
 
-function openAccountSwitcher() {
-    const modal = document.getElementById('accountSwitcherModal');
-    const currentAccountDisplay = document.getElementById('currentAccountDisplay');
-    const accountsList = document.getElementById('accountsList');
-    
-    // Render current account
-    if (currentUser) {
-        const accountHtml = `
-            <h4 style="margin: 0 0 0.5rem 0; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Current Account</h4>
-            <div class="current-account-card">
-                <div class="account-avatar">
-                    ${currentUser.githubAvatarUrl ? `<img src="${currentUser.githubAvatarUrl}" alt="${currentUser.email}">` : `<i class="fa-solid fa-user"></i>`}
-                </div>
-                <div class="account-info">
-                    <div class="account-email">${currentUser.email}</div>
-                    ${currentUser.githubLogin ? `<div class="account-subtext">GitHub: ${currentUser.githubLogin}</div>` : ''}
-                </div>
-            </div>
-        `;
-        currentAccountDisplay.innerHTML = accountHtml;
-    }
-    
-    // Render saved accounts
-    const savedAccounts = getSavedAccounts();
-    const currentEmail = currentUser?.email;
-    
-    if (savedAccounts.length === 0) {
-        accountsList.innerHTML = '<div class="account-item saved-empty">No saved accounts yet</div>';
-    } else {
-        accountsList.innerHTML = savedAccounts
-            .filter(acc => acc.email !== currentEmail) // Don't show current account
-            .map(acc => `
-                <div class="account-item">
-                    <div class="account-avatar">
-                        ${acc.githubAvatarUrl ? `<img src="${acc.githubAvatarUrl}" alt="${acc.email}">` : `<i class="fa-solid fa-user"></i>`}
-                    </div>
-                    <div class="account-info">
-                        <div class="account-email">${acc.email}</div>
-                        ${acc.githubLogin ? `<div class="account-subtext">GitHub: ${acc.githubLogin}</div>` : ''}
-                    </div>
-                    <div class="account-item-actions">
-                        <button class="account-switch-btn" onclick="switchToAccount('${acc.email}')">Switch</button>
-                        <button class="account-forget-btn" onclick="forgetAccount('${acc.email}')" title="Remove account"><i class="fa-solid fa-trash-can"></i></button>
-                    </div>
-                </div>
-            `).join('');
-    }
-    
-    modal.classList.add('active');
-}
-
 function switchToAccount(email) {
     const savedAccounts = getSavedAccounts();
     const account = savedAccounts.find(acc => acc.email === email);
@@ -637,7 +652,7 @@ function switchToAccount(email) {
     currentTeamId = null;
     
     toast.show(`Switched to ${email}`, 'success');
-    closeModal('accountSwitcherModal');
+    closeAccountDropdown();
     checkAuth(); // This will reload the user data
 }
 
@@ -651,11 +666,11 @@ function forgetAccount(email) {
     localStorage.setItem('savedAccounts', JSON.stringify(savedAccounts));
     
     toast.show('Account removed', 'success');
-    openAccountSwitcher(); // Refresh the modal
+    renderAccountDropdown(); // Refresh the dropdown
 }
 
 function addAnotherAccount() {
-    closeModal('accountSwitcherModal');
+    closeAccountDropdown();
     document.getElementById('authModal').classList.add('active');
 }
 

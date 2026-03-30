@@ -31,7 +31,22 @@
                     <button id="headerTeamsBtn" class="icon-btn" onclick="openTeamsModal()" title="Teams"><i class="fa-solid fa-users"></i></button>
                     <button class="icon-btn" onclick="toggleTheme()" title="Toggle Theme"><i class="fa-solid fa-moon" id="themeIcon"></i></button>
                     <button id="headerSyncBtn" class="icon-btn" onclick="syncData()" title="Sync Data"><i class="fa-solid fa-rotate"></i></button>
-                    <button class="icon-btn" id="logoutBtn" onclick="openAccountSwitcher()" title="Logout" style="display: none;"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+                    <div style="position: relative; display: none;" id="logoutBtnContainer">
+                        <button class="icon-btn" id="logoutBtn" onclick="toggleAccountDropdown(event)" title="Account"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+                        <!-- Account Switcher Dropdown -->
+                        <div id="accountSwitcherDropdown" class="account-dropdown" style="display: none;">
+                            <div id="currentAccountDropdown" class="dropdown-item current-account-item"></div>
+                            <div class="dropdown-divider"></div>
+                            <div id="accountsDropdownList" class="dropdown-accounts"></div>
+                            <div class="dropdown-divider"></div>
+                            <button class="dropdown-item" onclick="addAnotherAccount()">
+                                <i class="fa-solid fa-user-plus"></i> Add account
+                            </button>
+                            <button class="dropdown-item danger" onclick="logout()">
+                                <i class="fa-solid fa-arrow-right-from-bracket"></i> Sign out
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -293,36 +308,6 @@
             <div class="modal-footer center-buttons">
                 <button class="btn btn-ghost" onclick="closeDeleteTeamModal()">Cancel</button>
                 <button class="btn btn-danger" onclick="confirmDeleteTeam()">Delete Team</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Account Switcher Modal -->
-    <div id="accountSwitcherModal" class="modal-overlay">
-        <div class="modal account-switcher-modal">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-user-circle"></i> Switch Account</h3>
-                <button class="icon-btn close-modal" onclick="closeModal('accountSwitcherModal')"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="account-switcher-body">
-                <div class="current-account-section">
-                    <div id="currentAccountDisplay" class="current-account-card"></div>
-                </div>
-                
-                <div id="accountsList" class="accounts-list">
-                    <!-- Saved accounts will be rendered here -->
-                </div>
-                
-                <div class="accounts-divider"></div>
-                
-                <div class="account-actions">
-                    <button class="btn btn-ghost btn-block" onclick="addAnotherAccount()">
-                        <i class="fa-solid fa-plus"></i> Add Another Account
-                    </button>
-                    <button class="btn btn-danger btn-block" onclick="logout()">
-                        <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
-                    </button>
-                </div>
             </div>
         </div>
     </div>
