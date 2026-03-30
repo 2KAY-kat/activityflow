@@ -54,6 +54,11 @@ window.addAnotherAccount = addAnotherAccount;
 window.switchToAccount = switchToAccount;
 window.forgetAccount = forgetAccount;
 
+// Commit tracking handlers
+window.viewTicketCommits = viewTicketCommits;
+window.navigateToDashboard = navigateToDashboard;
+window.refreshCommits = refreshCommits;
+
 // Drag and drop handlers
 window.dragStart = dragStart;
 window.allowDrop = dragOver;
@@ -1158,6 +1163,7 @@ function renderBoard() {
             <div class="ticket-header">
                 <div class="ticket-title">${ticket.title}</div>
                 <div class="ticket-actions">
+                    ${ticket.githubBranchName ? `<button class="icon-btn commits" onclick="viewTicketCommits(${ticket.id})" title="View commits"><i class="fa-solid fa-code-branch"></i></button>` : ''}
                     <button class="icon-btn edit" onclick="editTicket('${ticket.id}')" title="Edit"><i class="fa-solid fa-pen"></i></button>
                     <button class="icon-btn delete" onclick="promptDeleteTicket('${ticket.id}')" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </div>
@@ -1732,4 +1738,147 @@ function updateAssigneeDropdown() {
         teamMembers.map(m => `<option value="${m.id}">${getMemberLabel(m)}</option>`).join('');
     
     select.value = currentValue;
+}
+
+/* ============= COMMIT TRACKING FUNCTIONS ============= */
+
+let currentCommitsTicketId = null;
+
+async function viewTicketCommits(ticketId) {
+    const ticket = tickets.find(t => t.id === ticketId);
+    if (!ticket) {
+        toast.show('Ticket not found', 'error');
+        return;
+    }
+
+    if (!ticket.githubBranchName) {
+        toast.show('This ticket does not have a GitHub branch assigned', 'error');
+        return;
+    }
+
+    currentCommitsTicketId = ticketId;
+    
+    // Show the commits page
+    const dashboard = document.getElementById('dashboard');
+    const commitsPage = document.getElementById('commitsPage');
+    if (dashboard) dashboard.style.display = 'none';
+    if (commitsPage) commitsPage.style.display = 'flex';
+
+    // Load and display commits
+    loadCommits(ticketId);
+}
+
+function navigateToDashboard() {
+    currentCommitsTicketId = null;
+    const dashboard = document.getElementById('dashboard');
+    const commitsPage = document.getElementById('commitsPage');
+    if (dashboard) dashboard.style.display = 'flex';
+    if (commitsPage) commitsPage.style.display = 'none';
+}
+
+async function loadCommits(ticketId) {
+    const ticket = tickets.find(t => t.id === ticketId);
+    if (!ticket) return;
+
+    const loadingEl = document.getElementById('commitsLoading');
+    const errorEl = document.getElementById('commitsError');
+    const timelineEl = document.getElementById('commitsTimeline');
+    const emptyEl = document.getElementById('commitsEmpty');
+    
+    if (loadingEl) loadingEl.style.display = 'flex';
+    if (errorEl) errorEl.style.display = 'none';
+    if (timelineEl) timelineEl.innerHTML = '';
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    try {
+        const res = await fetch(`/api/github/tickets/${ticketId}/commits`, {
+            headers: { Authorization: `Bearer ${authToken}` }
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `Failed to fetch commits (${res.status})`);
+        }
+
+        const data = await res.json();
+        
+        // Update page metadata
+        const titleEl = document.getElementById('commitsPageTitle');
+        const branchEl = document.getElementById('commitsBranch').querySelector('span');
+        const repoEl = document.getElementById('commitsRepo').querySelector('span');
+        
+        if (titleEl) titleEl.textContent = `Commits for "${ticket.title}"`;
+        if (branchEl) branchEl.textContent = ticket.githubBranchName;
+        if (repoEl) repoEl.textContent = data.repository;
+
+        if (!data.commits || data.commits.length === 0) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = 'flex';
+            return;
+        }
+
+        // Render commits
+        renderCommits(data.commits);
+        
+    } catch (error) {
+        console.error('Failed to load commits:', error);
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (errorEl) {
+            errorEl.style.display = 'flex';
+            errorEl.innerHTML = `<i class="fa-solid fa-exclamation-circle"></i><div>${error.message}</div>`;
+        }
+    }
+}
+
+function renderCommits(commits) {
+    const timelineEl = document.getElementById('commitsTimeline');
+    const loadingEl = document.getElementById('commitsLoading');
+    const emptyEl = document.getElementById('commitsEmpty');
+    
+    if (!timelineEl) return;
+
+    timelineEl.innerHTML = commits.map((commit, index) => {
+        const date = new Date(commit.date);
+        const displayDate = date.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+
+        return `
+            <div class="commit-item">
+                <div class="commit-dot">${index + 1}</div>
+                <div class="commit-content">
+                    <div class="commit-message">${escapeHtml(commit.message)}</div>
+                    <div class="commit-details">
+                        <div class="commit-author">
+                            ${commit.avatarUrl ? `<img src="${commit.avatarUrl}" alt="${commit.author}" class="commit-avatar">` : `<div class="assignee-avatar" style="width: 28px; height: 28px; font-size: 0.75rem;">${commit.author.substring(0, 2).toUpperCase()}</div>`}
+                            <span class="commit-author-name">${escapeHtml(commit.author)}</span>
+                        </div>
+                        <span class="commit-sha" title="${commit.sha}">${commit.shortSha}</span>
+                        <span class="commit-date">${displayDate}</span>
+                    </div>
+                    ${commit.htmlUrl ? `<a href="${commit.htmlUrl}" target="_blank" rel="noopener" class="commit-link"><i class="fa-solid fa-arrow-up-right-from-square"></i> View on GitHub</a>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = 'none';
+}
+
+function refreshCommits() {
+    if (currentCommitsTicketId !== null) {
+        loadCommits(currentCommitsTicketId);
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }

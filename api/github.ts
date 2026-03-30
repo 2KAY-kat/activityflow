@@ -1,7 +1,7 @@
 import express, { Response } from 'express';
 import prisma from './prisma';
 import { AuthRequest, authenticate } from './middleware/auth';
-import { getGitHubAppConfig, getGitHubAppInstallUrl } from './utils/github-app';
+import { getGitHubAppConfig, getGitHubAppInstallUrl, createInstallationAccessToken, githubRequest, githubRequestAllPages } from './utils/github-app';
 import { syncGitHubCollaborators, syncGitHubInstallationsAndRepositories } from './utils/github-sync';
 
 const router = express.Router();
@@ -207,6 +207,88 @@ router.get(
     } catch (error) {
       console.error('Fetch GitHub collaborators error:', error);
       res.status(500).json({ error: 'Failed to fetch GitHub collaborators' });
+    }
+  }
+);
+
+router.get(
+  ['/tickets/:ticketId/commits', '/api/github/tickets/:ticketId/commits'],
+  authenticate,
+  async (req: AuthRequest, res: Response) => {
+    const ticketIdParam = req.params.ticketId;
+    const ticketId = parseInt(typeof ticketIdParam === 'string' ? ticketIdParam : ticketIdParam[0], 10);
+
+    if (Number.isNaN(ticketId)) {
+      return res.status(400).json({ error: 'Invalid ticket ID' });
+    }
+
+    try {
+      const ticket = await prisma.ticket.findFirst({
+        where: {
+          id: ticketId,
+          team: {
+            members: {
+              some: {
+                userId: req.userId!,
+              },
+            },
+          },
+        },
+        include: {
+          team: {
+            include: {
+              githubRepository: {
+                include: {
+                  installation: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!ticket) {
+        return res.status(404).json({ error: 'Ticket not found' });
+      }
+
+      if (!ticket.team?.githubRepository) {
+        return res.status(400).json({ error: 'Ticket team does not have a GitHub repository connected' });
+      }
+
+      if (!ticket.githubBranchName) {
+        return res.status(400).json({ error: 'Ticket does not have a GitHub branch name' });
+      }
+
+      const repository = ticket.team.githubRepository;
+      const installationToken = await createInstallationAccessToken(repository.installation.githubInstallationId);
+
+      const commits = await githubRequestAllPages(
+        `/repos/${repository.ownerLogin}/${repository.name}/commits?sha=${encodeURIComponent(ticket.githubBranchName)}`,
+        installationToken.token
+      );
+
+      const formattedCommits = commits.map((commit: any) => ({
+        sha: commit.sha,
+        shortSha: commit.sha.substring(0, 7),
+        message: commit.commit?.message || '',
+        author: commit.commit?.author?.name || 'Unknown',
+        email: commit.commit?.author?.email || '',
+        date: commit.commit?.author?.date || new Date().toISOString(),
+        htmlUrl: commit.html_url || '',
+        avatarUrl: commit.author?.avatar_url || '',
+        username: commit.author?.login || '',
+      }));
+
+      res.json({
+        ticketId,
+        branch: ticket.githubBranchName,
+        repository: `${repository.ownerLogin}/${repository.name}`,
+        commits: formattedCommits,
+        total: formattedCommits.length,
+      });
+    } catch (error: any) {
+      console.error('Fetch ticket commits error:', error);
+      res.status(500).json({ error: error.message || 'Failed to fetch ticket commits' });
     }
   }
 );

@@ -118,6 +118,39 @@
         </section>
     </main>
 
+    <!-- Commits Page -->
+    <section class="commits-page" id="commitsPage" style="display: none;">
+        <div class="commits-header">
+            <button class="btn-back" onclick="navigateToDashboard()"><i class="fa-solid fa-arrow-left"></i> Back</button>
+            <div class="commits-title-section">
+                <h2 id="commitsPageTitle">Commit History</h2>
+                <div id="commitsPageMeta" class="commits-meta">
+                    <span id="commitsBranch" class="meta-badge"><i class="fa-solid fa-code-branch"></i> <span></span></span>
+                    <span id="commitsRepo" class="meta-badge"><i class="fa-solid fa-book"></i> <span></span></span>
+                </div>
+            </div>
+            <button class="icon-btn" onclick="refreshCommits()" title="Refresh commits"><i class="fa-solid fa-rotate"></i></button>
+        </div>
+
+        <div class="commits-container">
+            <div id="commitsLoading" class="commits-loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Loading commits...</p>
+            </div>
+
+            <div id="commitsError" class="commits-error" style="display: none;"></div>
+
+            <div id="commitsTimeline" class="commits-timeline">
+                <!-- Commits render here -->
+            </div>
+
+            <div id="commitsEmpty" class="commits-empty" style="display: none;">
+                <i class="fa-solid fa-inbox"></i>
+                <p>No commits found for this branch</p>
+            </div>
+        </div>
+    </section>
+
     <footer class="app-footer">
         <div class="footer-container">
             <div class="footer-info">
