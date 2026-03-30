@@ -1564,7 +1564,7 @@ textarea {
 .account-dropdown {
     position: absolute;
     top: calc(100% + 8px);
-    right: -100px;
+    right: 0;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 8px;

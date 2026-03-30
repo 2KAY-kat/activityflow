@@ -89,12 +89,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Add logout button event listener
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', toggleAccountDropdown);
-    }
-
     document.getElementById('authForm').addEventListener('submit', handleAuth);
     document.getElementById('ticketForm').addEventListener('submit', saveTicket);
     toggleTeamSourceFields();
@@ -544,14 +538,14 @@ function logout() {
 
 /* Account Switcher Functions */
 function toggleAccountDropdown(e) {
-    e.stopPropagation();
-    const dropdown = document.getElementById('accountSwitcherDropdown');
-    if (!dropdown) {
-        return;
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
     }
-    const isVisible = dropdown.classList.contains('show');
+    const dropdown = document.getElementById('accountSwitcherDropdown');
+    if (!dropdown) return;
     
-    if (isVisible) {
+    if (dropdown.classList.contains('show')) {
         dropdown.classList.remove('show');
     } else {
         renderAccountDropdown();
@@ -561,12 +555,16 @@ function toggleAccountDropdown(e) {
 
 function closeAccountDropdown() {
     const dropdown = document.getElementById('accountSwitcherDropdown');
-    dropdown.classList.remove('show');
+    if (dropdown) {
+        dropdown.classList.remove('show');
+    }
 }
 
 function renderAccountDropdown() {
     const currentAccountDisplay = document.getElementById('currentAccountDropdown');
     const accountsList = document.getElementById('accountsDropdownList');
+    
+    if (!currentAccountDisplay || !accountsList) return;
     
     // Render current account
     if (currentUser) {
@@ -578,9 +576,10 @@ function renderAccountDropdown() {
                     ${currentUser.githubLogin ? `<div class="account-email-dropdown-user">@${currentUser.githubLogin}</div>` : ''}
                 </div>
             </div>
-            <i class="fa-solid fa-arrow-right-left account-switch-icon"></i>
         `;
         currentAccountDisplay.innerHTML = accountHtml;
+    } else {
+        currentAccountDisplay.innerHTML = '<div style="color: var(--text-muted);">Loading...</div>';
     }
     
     // Render saved accounts
