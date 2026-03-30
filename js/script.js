@@ -89,6 +89,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Add logout button event listener
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', toggleAccountDropdown);
+    }
+
     document.getElementById('authForm').addEventListener('submit', handleAuth);
     document.getElementById('ticketForm').addEventListener('submit', saveTicket);
     toggleTeamSourceFields();
@@ -540,6 +546,9 @@ function logout() {
 function toggleAccountDropdown(e) {
     e.stopPropagation();
     const dropdown = document.getElementById('accountSwitcherDropdown');
+    if (!dropdown) {
+        return;
+    }
     const isVisible = dropdown.classList.contains('show');
     
     if (isVisible) {

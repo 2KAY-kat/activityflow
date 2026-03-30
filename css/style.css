@@ -1563,8 +1563,8 @@ textarea {
 /* Account Switcher Dropdown */
 .account-dropdown {
     position: absolute;
-    top: calc(100% + 10px);
-    right: -50px;
+    top: calc(100% + 8px);
+    right: -100px;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -1572,12 +1572,13 @@ textarea {
     max-width: 350px;
     box-shadow: var(--shadow-lg);
     z-index: 1000;
-    flex-direction: column;
     display: none;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .account-dropdown.show {
-    display: flex;
+    display: flex !important;
 }
 
 .dropdown-item {
