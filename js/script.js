@@ -654,15 +654,30 @@ function switchToAccount(email) {
         return;
     }
     
-    // Save the token and reload
+    // Update token and storage
     authToken = account.token;
     localStorage.setItem('authToken', account.token);
     localStorage.removeItem('currentTeamId');
     currentTeamId = null;
     
+    // Immediately update currentUser with saved data for instant UI update
+    currentUser = {
+        id: account.id,
+        email: account.email,
+        githubLogin: account.githubLogin,
+        githubAvatarUrl: account.githubAvatarUrl,
+        lastActiveAt: new Date().toISOString()
+    };
+    
+    // Update UI immediately
+    renderCurrentUserBadge();
+    renderAccountDropdown();
+    
     toast.show(`Switched to ${email}`, 'success');
     closeAccountDropdown();
-    checkAuth(); // This will reload the user data
+    
+    // Load full user data from server in background
+    loadCurrentUser();
 }
 
 function forgetAccount(email) {
