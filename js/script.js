@@ -540,18 +540,19 @@ function logout() {
 function toggleAccountDropdown(e) {
     e.stopPropagation();
     const dropdown = document.getElementById('accountSwitcherDropdown');
-    const isVisible = dropdown.style.display !== 'none';
+    const isVisible = dropdown.classList.contains('show');
     
     if (isVisible) {
-        dropdown.style.display = 'none';
+        dropdown.classList.remove('show');
     } else {
         renderAccountDropdown();
-        dropdown.style.display = 'block';
+        dropdown.classList.add('show');
     }
 }
 
 function closeAccountDropdown() {
-    document.getElementById('accountSwitcherDropdown').style.display = 'none';
+    const dropdown = document.getElementById('accountSwitcherDropdown');
+    dropdown.classList.remove('show');
 }
 
 function renderAccountDropdown() {

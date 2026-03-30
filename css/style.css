@@ -1572,8 +1572,12 @@ textarea {
     max-width: 350px;
     box-shadow: var(--shadow-lg);
     z-index: 1000;
-    display: flex !important;
     flex-direction: column;
+    display: none;
+}
+
+.account-dropdown.show {
+    display: flex;
 }
 
 .dropdown-item {
