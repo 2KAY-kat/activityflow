@@ -29,6 +29,7 @@ export const ticketSchema = z.object({
   assigneeId: z.number().int().optional().nullable(),
   assigneeCollaboratorId: z.number().int().optional().nullable(),
   teamId: z.number().int().optional().nullable(),
+  githubBranchName: z.string().optional().nullable(),
 });
 
 export const ticketUpdateSchema = ticketSchema.partial();

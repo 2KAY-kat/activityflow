@@ -1219,7 +1219,8 @@ async function saveTicket(e) {
         assigneeId: currentTeam?.sourceType === 'GITHUB' ? null : assigneeValue,
         assigneeCollaboratorId: currentTeam?.sourceType === 'GITHUB' ? assigneeValue : null,
         status: document.getElementById('ticketStatus').value,
-        teamId: currentTeamId ? parseInt(currentTeamId) : null
+        teamId: currentTeamId ? parseInt(currentTeamId) : null,
+        githubBranchName: document.getElementById('ticketGitHubBranch').value || null
     };
 
     const isUpdate = !!editingTicketId;
@@ -1274,6 +1275,7 @@ function editTicket(id) {
     document.getElementById('ticketPriority').value = ticket.priority;
     document.getElementById('ticketAssignee').value = ticket.assigneeCollaboratorId || ticket.assigneeId || '';
     document.getElementById('ticketStatus').value = ticket.status;
+    document.getElementById('ticketGitHubBranch').value = ticket.githubBranchName || '';
 
     document.getElementById('ticketModal').classList.add('active');
 }

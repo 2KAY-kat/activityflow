@@ -208,7 +208,7 @@ router.post(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: R
       return res.status(400).json({ error: 'Validation failed', details: validation.error.format() });
     }
 
-    const { title, description, status, priority, assigneeId, assigneeCollaboratorId, teamId } = validation.data;
+    const { title, description, status, priority, assigneeId, assigneeCollaboratorId, teamId, githubBranchName } = validation.data;
 
     if (!teamId) {
       return res.status(400).json({ error: 'Team ID is required' });
@@ -235,6 +235,7 @@ router.post(['/', '/api/tickets'], authenticate, async (req: AuthRequest, res: R
         priority,
         teamId,
         userId: req.userId!,
+        githubBranchName,
         ...assignmentData,
         ...buildLifecycleFieldsForCreate(status),
       },

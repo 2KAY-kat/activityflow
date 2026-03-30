@@ -208,6 +208,10 @@
                         <option value="">Unassigned</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label for="ticketGitHubBranch">GitHub Branch <span style="color: var(--text-muted); font-weight: 400;">(optional)</span></label>
+                    <input type="text" id="ticketGitHubBranch" placeholder="e.g. feature/login-fix" autocomplete="off" style="font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 0.9rem;">
+                </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-ghost" onclick="closeTicketModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary" id="saveTicketBtn">Save Ticket</button>
